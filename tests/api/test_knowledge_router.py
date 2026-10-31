@@ -1551,6 +1551,76 @@ def test_move_file_into_folder(monkeypatch, tmp_path: Path) -> None:
     assert not (raw / "demo.txt").exists()
 
 
+def test_move_file_rekeys_its_hash_record(monkeypatch, tmp_path: Path) -> None:
+    """``file_hashes`` is keyed by the path under ``raw/`` and must follow the file.
+
+    A stale key points at a path that no longer exists, so the moved document
+    looks unindexed on the next rebuild and its record survives removal.
+    """
+    manager = _ready_kb_manager(tmp_path)
+    kb_dir = manager.base_dir / "kb"
+    raw = kb_dir / "raw"
+    (raw / "demo.txt").write_text("hi", encoding="utf-8")
+    (raw / "Papers").mkdir()
+    metadata_file = kb_dir / "metadata.json"
+    metadata_file.write_text(
+        json.dumps({"name": "kb", "file_hashes": {"demo.txt": "hash-demo"}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(knowledge_router_module, "get_kb_manager", lambda: manager)
+    monkeypatch.setattr(knowledge_router_module, "_kb_base_dir", tmp_path / "knowledge_bases")
+
+    with TestClient(_build_app()) as client:
+        response = client.post(
+            "/api/knowledge-bases/kb/files/move",
+            json={"source": "demo.txt", "dest_folder": "Papers"},
+        )
+
+    assert response.status_code == 200
+    on_disk = json.loads(metadata_file.read_text(encoding="utf-8"))
+    assert on_disk["file_hashes"] == {"Papers/demo.txt": "hash-demo"}
+
+
+def test_move_folder_rekeys_every_hash_record_below_it(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Moving a folder relocates the records of all the documents inside it."""
+    manager = _ready_kb_manager(tmp_path)
+    kb_dir = manager.base_dir / "kb"
+    raw = kb_dir / "raw"
+    (raw / "Papers" / "2024").mkdir(parents=True)
+    (raw / "Papers" / "2024" / "demo.txt").write_text("hi", encoding="utf-8")
+    (raw / "Archive").mkdir()
+    metadata_file = kb_dir / "metadata.json"
+    metadata_file.write_text(
+        json.dumps(
+            {
+                "name": "kb",
+                "file_hashes": {
+                    "Papers/2024/demo.txt": "hash-demo",
+                    "kept.txt": "hash-kept",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(knowledge_router_module, "get_kb_manager", lambda: manager)
+    monkeypatch.setattr(knowledge_router_module, "_kb_base_dir", tmp_path / "knowledge_bases")
+
+    with TestClient(_build_app()) as client:
+        response = client.post(
+            "/api/knowledge-bases/kb/files/move",
+            json={"source": "Papers", "dest_folder": "Archive"},
+        )
+
+    assert response.status_code == 200
+    on_disk = json.loads(metadata_file.read_text(encoding="utf-8"))
+    assert on_disk["file_hashes"] == {
+        "Archive/Papers/2024/demo.txt": "hash-demo",
+        "kept.txt": "hash-kept",
+    }
+
+
 def test_list_files_preserves_kb_named_default(monkeypatch, tmp_path: Path) -> None:
     manager = _FakeKBManager(tmp_path / "knowledge_bases")
     manager.config["knowledge_bases"]["actual-kb"] = {

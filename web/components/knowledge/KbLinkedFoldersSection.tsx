@@ -20,16 +20,18 @@ import {
 import type {
   LinkedFolderInfo,
   SyncFolderResponse,
+  UnlinkFolderResult,
 } from "@/features/knowledge/model/types";
 import { listLinkedFolders } from "@/features/knowledge/api/folders";
 import ProcessLogs from "@/components/common/ProcessLogs";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import LinkFolderModal from "./LinkFolderModal";
 
 interface KbLinkedFoldersSectionProps {
   kb: KnowledgeBase;
   task?: TaskState;
   onLinkFolder: (folderPath: string) => Promise<void>;
-  onUnlinkFolder: (folderId: string) => Promise<void>;
+  onUnlinkFolder: (folderId: string) => Promise<UnlinkFolderResult>;
   onSyncFolder: (folderId: string) => Promise<SyncFolderResponse>;
 }
 
@@ -47,6 +49,7 @@ export default function KbLinkedFoldersSection({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [linkOpen, setLinkOpen] = useState(false);
+  const [unlinkTarget, setUnlinkTarget] = useState<LinkedFolderInfo | null>(null);
   const [unlinkingId, setUnlinkingId] = useState<string | null>(null);
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [activeSyncFolderId, setActiveSyncFolderId] = useState<string | null>(
@@ -113,21 +116,23 @@ export default function KbLinkedFoldersSection({
   };
 
   const handleUnlink = async (folder: LinkedFolderInfo) => {
-    if (
-      !window.confirm(
-        t(
-          "Unlinking stops future syncs. Files already imported remain in this knowledge base.",
-        ),
-      )
-    ) {
-      return;
-    }
     setUnlinkingId(folder.id);
     setError(null);
     try {
-      await onUnlinkFolder(folder.id);
+      const result = await onUnlinkFolder(folder.id);
+      setUnlinkTarget(null);
       setFolders((current) => current.filter((item) => item.id !== folder.id));
+      if (result.reindex_error) {
+        setError(
+          t(
+            "The documents were removed, but the index could not be rebuilt automatically ({{error}}). Rebuild it to stop them from being retrieved.",
+            { error: result.reindex_error },
+          ),
+        );
+      }
     } catch (err) {
+      // Close the dialog so the failure is visible behind it.
+      setUnlinkTarget(null);
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setUnlinkingId(null);
@@ -296,7 +301,7 @@ export default function KbLinkedFoldersSection({
               }
               unlinking={unlinkingId === folder.id}
               onSync={() => void handleSync(folder)}
-              onUnlink={() => void handleUnlink(folder)}
+              onUnlink={() => setUnlinkTarget(folder)}
             />
           ))}
         </div>
@@ -313,6 +318,31 @@ export default function KbLinkedFoldersSection({
         onClose={() => setLinkOpen(false)}
         onSubmit={handleLink}
       />
+
+      <ConfirmDialog
+        open={unlinkTarget !== null}
+        title={t("Unlink this folder?")}
+        confirmLabel={t("Unlink and delete documents")}
+        tone="danger"
+        busy={unlinkingId !== null}
+        busyLabel={t("Unlinking…")}
+        onConfirm={() => {
+          if (unlinkTarget) void handleUnlink(unlinkTarget);
+        }}
+        onCancel={() => setUnlinkTarget(null)}
+      >
+        <p className="text-[13px] leading-relaxed">
+          {t(
+            "This folder has imported {{count}} document(s) into this knowledge base. Unlinking deletes them together with the link.",
+            { count: unlinkTarget?.file_count ?? 0 },
+          )}
+        </p>
+        <p className="mt-2 text-[13px] leading-relaxed">
+          {t(
+            "The index is rebuilt afterwards, so their content stops being retrieved.",
+          )}
+        </p>
+      </ConfirmDialog>
     </div>
   );
 }

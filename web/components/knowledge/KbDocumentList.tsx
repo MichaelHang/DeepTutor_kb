@@ -7,6 +7,8 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  ChevronsDownUp,
+  ChevronsUpDown,
   Folder,
   FolderPlus,
   Loader2,
@@ -134,10 +136,6 @@ export default function KbDocumentList({
         if (force) invalidateClientCache(`knowledge:files:${kbName}`);
         const next = await listKnowledgeBaseFiles(kbName, { force });
         setFiles(next);
-        // Default-expand every folder so files are visible without digging.
-        setExpanded(
-          new Set(next.filter((e) => e.type === "folder").map((e) => e.name)),
-        );
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       } finally {
@@ -156,6 +154,14 @@ export default function KbDocumentList({
     () => files.filter((e) => e.type !== "folder"),
     [files],
   );
+
+  // Folders start closed so the list reads as an outline; one button opens or
+  // closes the whole tree at once.
+  const allFoldersExpanded =
+    folderPaths.length > 0 && folderPaths.every((path) => expanded.has(path));
+  const toggleAllFolders = useCallback(() => {
+    setExpanded(allFoldersExpanded ? new Set<string>() : new Set(folderPaths));
+  }, [allFoldersExpanded, folderPaths]);
 
   const toggleFolder = (path: string) =>
     setExpanded((prev) => {
@@ -502,6 +508,25 @@ export default function KbDocumentList({
               )}
             </button>
           </Tooltip>
+          {folderPaths.length > 0 && (
+            <Tooltip
+              label={allFoldersExpanded ? t("Collapse all") : t("Expand all")}
+              side="top"
+            >
+              <button
+                type="button"
+                onClick={toggleAllFolders}
+                aria-label={allFoldersExpanded ? t("Collapse all") : t("Expand all")}
+                className="rounded-md p-1 text-[var(--muted-foreground)] transition-colors hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+              >
+                {allFoldersExpanded ? (
+                  <ChevronsUpDown size={12} strokeWidth={1.7} />
+                ) : (
+                  <ChevronsDownUp size={12} strokeWidth={1.7} />
+                )}
+              </button>
+            </Tooltip>
+          )}
           <Tooltip label={t("Collapse")} side="top">
             <button
               type="button"

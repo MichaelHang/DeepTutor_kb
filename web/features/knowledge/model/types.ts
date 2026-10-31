@@ -33,6 +33,7 @@ export type {
   PreflightCheck,
   RagProviderSummary,
   SyncFolderResponse,
+  UnlinkFolderResult,
   WebSource,
   WebSourceSchedulePayload,
   WebSourceSyncJob,

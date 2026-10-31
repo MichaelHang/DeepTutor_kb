@@ -51,6 +51,14 @@ class _FolderManager:
         }
         self.update_calls: list[tuple[str, str, list[str]]] = []
         self.mtime_calls: list[dict[str, str] | None] = []
+        self.unlink_result = {
+            "folder_id": "folder-1",
+            "path": str(base_dir / "notes"),
+            "removed_files": ["note.md"],
+            "removed_count": 1,
+            "was_indexed": False,
+        }
+        self.cleaned: list[str | None] = []
         self.detect_result = {
             "new_files": [],
             "modified_files": [],
@@ -60,6 +68,13 @@ class _FolderManager:
 
     def _load_config(self) -> dict:
         return self.config
+
+    def _save_config(self) -> None:
+        return None
+
+    def clean_rag_storage(self, name: str | None = None, backup: bool = True) -> bool:
+        self.cleaned.append(name)
+        return True
 
     def list_knowledge_bases(self) -> list[str]:
         return list(self.config["knowledge_bases"])
@@ -73,8 +88,8 @@ class _FolderManager:
     def link_folder(self, _kb_name: str, _folder_path: str) -> dict:
         return self.folder
 
-    def unlink_folder(self, _kb_name: str, _folder_id: str) -> bool:
-        return True
+    def unlink_folder(self, _kb_name: str, _folder_id: str) -> dict:
+        return dict(self.unlink_result)
 
     def detect_folder_changes(self, _kb_name: str, _folder_id: str) -> dict:
         return self.detect_result
@@ -223,6 +238,108 @@ def test_unlink_folder_rejects_connected_kb(
         response = client.delete("/api/knowledge-bases/kb/linked-folders/folder-1")
 
     assert response.status_code == 409
+
+
+def test_unlink_folder_reports_the_documents_it_removed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    manager = _FolderManager(tmp_path)
+    _patch_manager(monkeypatch, manager)
+
+    with TestClient(_build_app()) as client:
+        response = client.delete("/api/knowledge-bases/kb/linked-folders/folder-1")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["removed_count"] == 1
+    assert body["removed_files"] == ["note.md"]
+    assert body["was_indexed"] is False
+    assert body["reindex_task_id"] is None
+
+
+def test_unlink_folder_rebuilds_the_knowledge_base_the_request_addressed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The rebuild must target the KB the request addressed.
+
+    A workspace-scoped reference resolves to a plain KB name, but only the
+    reference itself still points at that workspace's knowledge base.
+    """
+    manager = _FolderManager(tmp_path)
+    manager.unlink_result["was_indexed"] = True
+    _patch_manager(monkeypatch, manager)
+    raw_dir = tmp_path / "kb" / "raw"
+    raw_dir.mkdir(parents=True)
+    (raw_dir / "kept.md").write_text("kept", encoding="utf-8")
+
+    ref = "workspace:ws-1:kb:kb"
+    monkeypatch.setattr(
+        knowledge_router_module,
+        "_writable_kb",
+        lambda _name: (manager, "kb", manager.base_dir),
+    )
+    seen: dict[str, str] = {}
+
+    async def _fake_reindex(kb_ref, background_tasks, **kwargs):
+        seen["kb_ref"] = kb_ref
+        return {"task_id": "reindex-task", "noop": False}
+
+    monkeypatch.setattr(knowledge_router_module, "reindex_knowledge_base", _fake_reindex)
+
+    with TestClient(_build_app()) as client:
+        response = client.delete(f"/api/knowledge-bases/{ref}/linked-folders/folder-1")
+
+    assert response.status_code == 200
+    assert seen["kb_ref"] == ref
+    assert response.json()["reindex_task_id"] == "reindex-task"
+
+
+def test_unlink_folder_drops_the_index_when_no_documents_remain(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """With nothing left to index, the stale index is dropped, not rebuilt."""
+    manager = _FolderManager(tmp_path)
+    manager.unlink_result["was_indexed"] = True
+    _patch_manager(monkeypatch, manager)
+    (tmp_path / "kb" / "raw").mkdir(parents=True)
+
+    async def _fail_reindex(*_args, **_kwargs):
+        raise AssertionError("an empty knowledge base must not be rebuilt")
+
+    monkeypatch.setattr(knowledge_router_module, "reindex_knowledge_base", _fail_reindex)
+
+    with TestClient(_build_app()) as client:
+        response = client.delete("/api/knowledge-bases/kb/linked-folders/folder-1")
+
+    assert response.status_code == 200
+    assert response.json()["reindex_task_id"] is None
+    assert manager.cleaned == ["kb"]
+
+
+def test_unlink_folder_queues_an_index_rebuild(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Deleted files keep their vectors until the index is rebuilt."""
+    manager = _FolderManager(tmp_path)
+    manager.unlink_result["was_indexed"] = True
+    _patch_manager(monkeypatch, manager)
+    raw_dir = tmp_path / "kb" / "raw"
+    raw_dir.mkdir(parents=True)
+    (raw_dir / "kept.md").write_text("kept", encoding="utf-8")
+
+    async def _fake_reindex(kb_name, background_tasks, **kwargs):
+        assert kb_name == "kb"
+        assert kwargs["force"] is True
+        return {"task_id": "reindex-task", "noop": False}
+
+    monkeypatch.setattr(knowledge_router_module, "reindex_knowledge_base", _fake_reindex)
+
+    with TestClient(_build_app()) as client:
+        response = client.delete("/api/knowledge-bases/kb/linked-folders/folder-1")
+
+    assert response.status_code == 200
+    assert response.json()["reindex_task_id"] == "reindex-task"
+    assert response.json()["reindex_error"] is None
 
 
 def test_completed_folder_task_records_source_paths(

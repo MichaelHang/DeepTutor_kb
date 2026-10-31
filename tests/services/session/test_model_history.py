@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -118,6 +119,50 @@ def test_invalid_or_incomplete_protocol_uses_display_history():
     ]
     record["version"] = 99
     assert normalize_model_turn(record) is None
+
+
+def test_a_stored_truncated_tool_call_is_repaired_instead_of_poisoning_the_session():
+    """A turn stored with cut-off arguments must not fail every later question.
+
+    The model ran out of output budget while writing a tool call, so the
+    stored arguments are invalid JSON. The provider validates that field on
+    every replay, so the turn used to fail the whole request with HTTP 400 —
+    once stored, every question asked afterwards failed the same way. The
+    repair keeps the turn and its tool result, and the call's identity
+    intact, because the provider correlates them by id.
+    """
+    record = turn_record()
+    record["messages"][1]["tool_calls"][0]["function"]["arguments"] = '{"key": "val\n'
+
+    repaired = normalize_model_turn(record)
+
+    assert repaired is not None
+    call = repaired["messages"][1]["tool_calls"][0]
+    assert call["id"] == "call-1"
+    assert call["function"]["name"] == "lookup"
+    assert json.loads(call["function"]["arguments"]) == {"key": "val"}
+    # The tool result that closed the call is still there.
+    assert repaired["messages"][2]["tool_call_id"] == "call-1"
+
+
+def test_replaying_a_stored_truncated_tool_call_yields_replayable_json():
+    record = turn_record()
+    record["messages"][1]["tool_calls"][0]["function"]["arguments"] = '{"key": "val\n'
+
+    replayed = replay_history(rows(record))
+
+    arguments = replayed[1]["tool_calls"][0]["function"]["arguments"]
+    assert json.loads(arguments) == {"key": "val"}
+
+
+def test_a_stored_call_with_valid_arguments_is_replayed_untouched():
+    record = turn_record()
+    before = deepcopy(record["messages"])
+
+    repaired = normalize_model_turn(record)
+
+    assert repaired is not None
+    assert repaired["messages"] == before
 
 
 def test_interruption_closes_unfinished_calls_without_claiming_success():

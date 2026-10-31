@@ -11,6 +11,8 @@ from copy import deepcopy
 import json
 from typing import Any
 
+from deeptutor.utils.json_parser import normalize_tool_call_arguments
+
 MODEL_TURN_KEY = "model_turn"
 MODEL_TURN_VERSION = 1
 # Exact legacy runtime envelope, not a general delimiter in user text.
@@ -94,7 +96,16 @@ def normalize_model_turn(value: Any) -> dict[str, Any] | None:
             pending.add(call_id)
         if message.get("content") is not None and not isinstance(message["content"], (str, list)):
             return None
-        cleaned.append({k: v for k, v in message.items() if k in _MESSAGE_KEYS})
+        entry = {k: v for k, v in message.items() if k in _MESSAGE_KEYS}
+        if calls:
+            # A stored turn can carry the argument JSON of a call the model
+            # never finished writing. The provider rejects the whole request
+            # when it replays that text, so such a turn would fail every later
+            # question in the session. Repair the arguments instead of
+            # dropping the turn: the tool result already told the model the
+            # call was not dispatched, and the replay must agree with it.
+            entry["tool_calls"] = [_repaired_tool_call(call) for call in calls]
+        cleaned.append(entry)
     if pending:
         return None
     record = {"version": MODEL_TURN_VERSION, "messages": cleaned}
@@ -105,6 +116,21 @@ def normalize_model_turn(value: Any) -> dict[str, Any] | None:
         return json.loads(json.dumps(record, ensure_ascii=False, allow_nan=False))
     except (TypeError, ValueError):
         return None
+
+
+def _repaired_tool_call(call: dict[str, Any]) -> dict[str, Any]:
+    """Return one stored tool call with replayable argument JSON.
+
+    Only the argument text changes. The call's id, name and any provider
+    extension are replayed verbatim, because the provider correlates the
+    assistant turn with its tool results by id.
+    """
+    function = call["function"]
+    arguments = function.get("arguments")
+    normalized = normalize_tool_call_arguments(arguments)
+    if arguments == normalized:
+        return call
+    return {**call, "function": {**function, "arguments": normalized}}
 
 
 def model_turn(row: dict[str, Any]) -> dict[str, Any] | None:

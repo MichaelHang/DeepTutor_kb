@@ -1227,6 +1227,8 @@
   "Pick any document from the list on the left to view it here without leaving the knowledge base.": "从左侧列表选择任意文档，可在此处直接预览，无需离开知识库。",
   "Collapse": "收起",
   "Expand": "展开",
+  "Expand all": "展开",
+  "Collapse all": "合拢",
   "Show file list": "显示文件列表",
   "Hide file list": "隐藏文件列表",
   "No files yet. Add one using the Add Documents tab.": "暂无文件。请使用「添加文档」标签页添加。",
@@ -2201,7 +2203,6 @@
   "Check this folder for new or modified files": "检查此文件夹中的新增或修改文件",
   "Unlink folder": "解除文件夹关联",
   "Unlink {{path}}": "解除关联 {{path}}",
-  "Unlinking stops future syncs. Files already imported remain in this knowledge base.": "解除关联后将停止后续同步。已导入此知识库的文件会保留。",
   "Sync now imports new or modified supported files. Deleted or renamed source files are not removed yet.": "立即同步会导入新增或修改过的受支持文件。已删除或重命名的源文件暂不会被移除。",
   "Sync Process": "同步过程",
   "Sync linked folder": "同步关联文件夹",
@@ -5520,5 +5521,11 @@
   "Applies to Chat, Solve, Ask Questions, Guided Learning, Reading, Course Study and standard visualizations. Changes take effect on the next turn.": "适用于对话、解题、主动提问、引导学习、沉浸式阅读、课程学习和常规可视化。从下一轮开始生效。",
   "Clear instructions": "清空提示词",
   "{{used}} / {{limit}} characters": "{{used}} / {{limit}} 字符",
-  "contextBudget.segment.workspace_instructions": "工作区提示词"
+  "contextBudget.segment.workspace_instructions": "工作区提示词",
+  "Unlink this folder?": "解除关联这个文件夹？",
+  "Unlink and delete documents": "解除关联并删除文档",
+  "Unlinking…": "正在解除关联…",
+  "This folder has imported {{count}} document(s) into this knowledge base. Unlinking deletes them together with the link.": "该文件夹已向此知识库导入 {{count}} 个文档。解除关联会连同链接一起删除这些文档。",
+  "The index is rebuilt afterwards, so their content stops being retrieved.": "随后会重建索引，使这些内容不再被检索到。",
+  "The documents were removed, but the index could not be rebuilt automatically ({{error}}). Rebuild it to stop them from being retrieved.": "文档已删除，但索引未能自动重建（{{error}}）。请手动重建索引，使这些内容不再被检索到。"
 }

@@ -1111,6 +1111,8 @@
   "Pick any document from the list on the left to view it here without leaving the knowledge base.": "Wähle ein beliebiges Dokument aus der Liste links, um es hier anzuzeigen, ohne die Knowledge Base zu verlassen.",
   "Collapse": "Einklappen",
   "Expand": "Ausklappen",
+  "Expand all": "Alle ausklappen",
+  "Collapse all": "Alle einklappen",
   "Show file list": "Dateiliste anzeigen",
   "Hide file list": "Dateiliste ausblenden",
   "No files yet. Add one using the Add Documents tab.": "Noch keine Dateien. Füge eine über den Tab „Dokumente hinzufügen“ hinzu.",
@@ -2201,7 +2203,6 @@
   "Check this folder for new or modified files": "Diesen Ordner auf neue oder geänderte Dateien prüfen",
   "Unlink folder": "Ordnerverknüpfung aufheben",
   "Unlink {{path}}": "Verknüpfung von {{path}} aufheben",
-  "Unlinking stops future syncs. Files already imported remain in this knowledge base.": "Das Aufheben der Verknüpfung stoppt künftige Synchronisierungen. Bereits importierte Dateien bleiben in dieser Knowledge Base erhalten.",
   "Sync now imports new or modified supported files. Deleted or renamed source files are not removed yet.": "Jetzt synchronisieren importiert neue oder geänderte unterstützte Dateien. Gelöschte oder umbenannte Quelldateien werden noch nicht entfernt.",
   "Sync Process": "Synchronisierungsprozess",
   "Sync linked folder": "Verknüpften Ordner synchronisieren",
@@ -5520,5 +5521,11 @@
   "Applies to Chat, Solve, Ask Questions, Guided Learning, Reading, Course Study and standard visualizations. Changes take effect on the next turn.": "Gilt für Chat, Problemlösung, Rückfragen, geführtes Lernen, Lesen, Kurslernen und Standardvisualisierungen. Änderungen gelten ab der nächsten Runde.",
   "Clear instructions": "Anweisungen leeren",
   "{{used}} / {{limit}} characters": "{{used}} / {{limit}} Zeichen",
-  "contextBudget.segment.workspace_instructions": "Arbeitsbereichsanweisungen"
+  "contextBudget.segment.workspace_instructions": "Arbeitsbereichsanweisungen",
+  "Unlink this folder?": "Diesen Ordner-Verknüpfung aufheben?",
+  "Unlink and delete documents": "Verknüpfung aufheben und Dokumente löschen",
+  "Unlinking…": "Verknüpfung wird aufgehoben…",
+  "This folder has imported {{count}} document(s) into this knowledge base. Unlinking deletes them together with the link.": "Dieser Ordner hat {{count}} Dokument(e) in diese Wissensdatenbank importiert. Beim Aufheben der Verknüpfung werden sie zusammen mit der Verknüpfung gelöscht.",
+  "The index is rebuilt afterwards, so their content stops being retrieved.": "Danach wird der Index neu aufgebaut, sodass ihre Inhalte nicht mehr abgerufen werden.",
+  "The documents were removed, but the index could not be rebuilt automatically ({{error}}). Rebuild it to stop them from being retrieved.": "Die Dokumente wurden entfernt, der Index konnte jedoch nicht automatisch neu aufgebaut werden ({{error}}). Bauen Sie ihn neu auf, damit sie nicht mehr abgerufen werden."
 }

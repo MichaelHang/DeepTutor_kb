@@ -44,6 +44,7 @@ from deeptutor.api.utils.task_log_stream import capture_task_logs, get_task_stre
 from deeptutor.knowledge.add_documents import (
     DocumentAdder,
     hashes_for_indexed_files,
+    rekey_moved_documents,
     remove_raw_document,
 )
 from deeptutor.knowledge.initializer import KnowledgeBaseInitializer
@@ -3179,10 +3180,13 @@ async def move_kb_file(kb_name: str, payload: MoveFilePayload):
 
     dest_dir.mkdir(parents=True, exist_ok=True)
     shutil.move(str(src), str(dest))
-    VisualAssetStore(manager.get_knowledge_base_path(kb_name)).move_source(
-        source_rel, dest.relative_to(raw_dir.resolve()).as_posix()
-    )
-    return {"status": "ok", "path": dest.relative_to(raw_dir.resolve()).as_posix()}
+    dest_rel = dest.relative_to(raw_dir.resolve()).as_posix()
+    # The hash records are keyed by the path under ``raw/``, so they have to
+    # follow the document — a stale key would make the moved document look
+    # unindexed on the next rebuild and survive its removal later on.
+    rekey_moved_documents(manager.get_knowledge_base_path(kb_name), source_rel, dest_rel)
+    VisualAssetStore(manager.get_knowledge_base_path(kb_name)).move_source(source_rel, dest_rel)
+    return {"status": "ok", "path": dest_rel}
 
 
 @router.get("/knowledge-bases/{kb_name}/file-preview-text/{filename:path}")
@@ -4109,18 +4113,23 @@ async def reindex_knowledge_base(
     indexing_llm: str = Form(""),
     config_fingerprint: Annotated[str, Form()] = "",
     embedding_model: Annotated[str, Form()] = "",
+    force: bool = False,
 ) -> dict[str, Any]:
     """Re-index ``kb_name`` through its bound RAG provider.
 
     LlamaIndex keys versions by the selected embedding model. The other
     providers keep synthetic provider-keyed versions, so they should rebuild
     without requiring an embedding-signature precheck.
+
+    ``force`` rebuilds even when a matching index is already present. It is
+    what a content removal needs: the files are gone from ``raw/``, but the
+    published index still holds their vectors, and only a rebuild drops them.
     """
     try:
         manager, kb_name, kb_base_dir = _writable_kb(kb_name)
         kb_entry = _load_kb_entry_or_404(manager, kb_name)
         _assert_not_connected_kb(kb_name, kb_entry)
-        force_reindex = str(kb_entry.get("status") or "").lower() == "error"
+        force_reindex = force or str(kb_entry.get("status") or "").lower() == "error"
         from deeptutor.knowledge.indexing_run import visible_run
 
         previous_run = visible_run(kb_base_dir / kb_name)
@@ -4762,17 +4771,95 @@ async def get_linked_folders(kb_name: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.delete("/knowledge-bases/{kb_name}/linked-folders/{folder_id}")
-async def unlink_folder(kb_name: str, folder_id: str):
-    """Unlink a folder from a knowledge base."""
+async def _purge_unlinked_documents(
+    manager,
+    kb_ref: str,
+    kb_name: str,
+    kb_base_dir: Path,
+    kb_entry: dict,
+    result: dict,
+    background_tasks: BackgroundTasks,
+) -> tuple[str | None, str | None]:
+    """Drop the documents of an unlinked folder from the published index.
+
+    The index is built per knowledge base — vectors plus a BM25 sidecar and a
+    page catalog — so no provider can prune single documents out of it.
+    Deleting the files alone would leave them retrievable, so the index is
+    rebuilt.
+
+    Returns the rebuild's task id, or ``None`` together with a reason when no
+    rebuild was needed or none could be queued.
+    """
+    provider = _validate_registered_provider(kb_entry.get("rag_provider") or DEFAULT_PROVIDER)
+    kb_dir = kb_base_dir / kb_name
+    from deeptutor.services.rag.index_probe import has_ready_provider_index
+
+    if not (result.get("was_indexed") or has_ready_provider_index(kb_dir, provider)):
+        return None, None
+
+    if not FileTypeRouter.collect_supported_files(kb_dir / "raw", recursive=True):
+        # The folder held the only documents: there is nothing left to index,
+        # so the stale index is dropped instead of rebuilt.
+        manager.clean_rag_storage(kb_name, backup=False)
+        kb_config = manager.config.get("knowledge_bases", {}).get(kb_name)
+        if isinstance(kb_config, dict):
+            kb_config["status"] = "needs_reindex"
+            manager._save_config()
+        return None, None
+
     try:
-        manager, resolved_name, _ = _writable_kb(kb_name)
-        _assert_not_connected_kb(resolved_name, _load_kb_entry_or_404(manager, resolved_name))
-        success = manager.unlink_folder(resolved_name, folder_id)
-        if not success:
+        reindex = await reindex_knowledge_base(
+            kb_ref,
+            background_tasks,
+            indexing_llm="",
+            config_fingerprint="",
+            embedding_model="",
+            force=True,
+        )
+    except HTTPException as exc:
+        logger.warning(
+            f"Could not queue a rebuild after unlinking a folder in '{kb_name}': {exc.detail}"
+        )
+        return None, str(exc.detail)
+    except Exception as exc:
+        logger.warning(f"Could not queue a rebuild after unlinking a folder in '{kb_name}': {exc}")
+        return None, str(exc)
+    return reindex.get("task_id"), None
+
+
+@router.delete("/knowledge-bases/{kb_name}/linked-folders/{folder_id}")
+async def unlink_folder(kb_name: str, folder_id: str, background_tasks: BackgroundTasks):
+    """Unlink a folder from a knowledge base and delete the documents it imported.
+
+    A linked folder is a source of copies inside the knowledge base. Only the
+    link keeps them in sync, so keeping the copies after the link is gone
+    would strand them: nothing could refresh or remove them afterwards. They
+    are deleted together with the link, and the index is rebuilt so they also
+    stop being retrievable.
+    """
+    try:
+        manager, resolved_name, kb_base_dir = _writable_kb(kb_name)
+        kb_entry = _load_kb_entry_or_404(manager, resolved_name)
+        _assert_not_connected_kb(resolved_name, kb_entry)
+        result = manager.unlink_folder(resolved_name, folder_id)
+        if result is None:
             raise HTTPException(status_code=404, detail=f"Folder '{folder_id}' not found")
-        logger.info(f"Unlinked folder '{folder_id}' from KB '{kb_name}'")
-        return {"message": "Folder unlinked successfully", "folder_id": folder_id}
+        logger.info(
+            f"Unlinked folder '{folder_id}' from KB '{kb_name}' and removed "
+            f"{result['removed_count']} imported file(s)"
+        )
+        reindex_task_id, reindex_error = await _purge_unlinked_documents(
+            manager, kb_name, resolved_name, kb_base_dir, kb_entry, result, background_tasks
+        )
+        return {
+            "message": "Folder unlinked successfully",
+            "folder_id": folder_id,
+            "removed_count": result["removed_count"],
+            "removed_files": result["removed_files"],
+            "was_indexed": result["was_indexed"],
+            "reindex_task_id": reindex_task_id,
+            "reindex_error": reindex_error,
+        }
     except HTTPException:
         raise
     except ValueError:

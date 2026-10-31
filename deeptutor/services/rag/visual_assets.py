@@ -360,14 +360,26 @@ class VisualAssetStore:
         return record, data
 
     def remove_source(self, source_relative_path: str) -> None:
+        self.remove_sources([source_relative_path])
+
+    def remove_sources(self, source_relative_paths: list[str]) -> int:
+        """Drop every asset that came from the given source documents.
+
+        Batched because a linked folder can contribute hundreds of documents
+        and the manifest is rewritten wholesale on every change.
+        """
+        targets = {path for path in source_relative_paths if path}
+        if not targets:
+            return 0
         prior = self._read_manifest()
         updated = {
             key: value
             for key, value in prior.items()
-            if value.get("source_path") != source_relative_path
+            if value.get("source_path") not in targets
         }
-        if len(updated) == len(prior):
-            return
+        removed = len(prior) - len(updated)
+        if not removed:
+            return 0
         self._atomic_write(
             self.manifest_path,
             json.dumps(
@@ -377,6 +389,7 @@ class VisualAssetStore:
         for old_id, old_record in prior.items():
             if old_id not in updated:
                 self._path(old_id, str(old_record.get("mime_type"))).unlink(missing_ok=True)
+        return removed
 
     def move_source(self, old_relative_path: str, new_relative_path: str) -> None:
         prior = self._read_manifest()

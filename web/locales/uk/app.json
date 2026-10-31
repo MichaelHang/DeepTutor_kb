@@ -1074,6 +1074,8 @@
   "Pick any document from the list on the left to view it here without leaving the knowledge base.": "Виберіть будь-який документ зі списку зліва, щоб переглянути його тут, не покидаючи базу знань.",
   "Collapse": "Згорнути",
   "Expand": "Розгорнути",
+  "Expand all": "Розгорнути все",
+  "Collapse all": "Згорнути всі",
   "Show file list": "Показати список файлів",
   "Hide file list": "Приховати список файлів",
   "No files yet. Add one using the Add Documents tab.": "Файлів ще немає. Додайте один за допомогою вкладки «Додати документи».",
@@ -4101,7 +4103,6 @@
   "Check this folder for new or modified files": "Перевірте цю папку на наявність нових або змінених файлів",
   "Unlink folder": "Від’єднати папку",
   "Unlink {{path}}": "Від’єднати {{path}}",
-  "Unlinking stops future syncs. Files already imported remain in this knowledge base.": "Роз’єднання призупиняє майбутні синхронізації. Вже імпортовані файли залишаються в цій базі знань.",
   "Sync now imports new or modified supported files. Deleted or renamed source files are not removed yet.": "Синхронізація тепер імпортує нові або змінені підтримувані файли. Видалені або перейменовані вихідні файли ще не видаляються.",
   "Sync Process": "Процес синхронізації",
   "Sync linked folder": "Синхронізувати пов’язану папку",
@@ -5536,5 +5537,11 @@
   "Applies to Chat, Solve, Ask Questions, Guided Learning, Reading, Course Study and standard visualizations. Changes take effect on the next turn.": "Застосовується до чату, розв’язування, запитань, керованого навчання, читання, курсів і стандартних візуалізацій. Зміни діють із наступного ходу.",
   "Clear instructions": "Очистити інструкції",
   "{{used}} / {{limit}} characters": "{{used}} / {{limit}} символів",
-  "contextBudget.segment.workspace_instructions": "Інструкції робочого простору"
+  "contextBudget.segment.workspace_instructions": "Інструкції робочого простору",
+  "Unlink this folder?": "Відв'язати цю теку?",
+  "Unlink and delete documents": "Відв'язати та видалити документи",
+  "Unlinking…": "Відв'язування…",
+  "This folder has imported {{count}} document(s) into this knowledge base. Unlinking deletes them together with the link.": "Ця тека імпортувала {{count}} документ(ів) до цієї бази знань. Відв'язування видаляє їх разом із посиланням.",
+  "The index is rebuilt afterwards, so their content stops being retrieved.": "Після цього індекс перебудовується, тож їхній вміст більше не знаходиться пошуком.",
+  "The documents were removed, but the index could not be rebuilt automatically ({{error}}). Rebuild it to stop them from being retrieved.": "Документи видалено, але індекс не вдалося перебудувати автоматично ({{error}}). Перебудуйте його, щоб їх більше не знаходили пошуком."
 }

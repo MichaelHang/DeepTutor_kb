@@ -1110,6 +1110,8 @@
   "Pick any document from the list on the left to view it here without leaving the knowledge base.": "Wybierz dowolny dokument z listy po lewej stronie, aby go tutaj wyświetlić, nie opuszczając bazy wiedzy.",
   "Collapse": "Zwiń",
   "Expand": "Rozwiń",
+  "Expand all": "Rozwiń wszystko",
+  "Collapse all": "Zwiń wszystko",
   "Show file list": "Pokaż listę plików",
   "Hide file list": "Ukryj listę plików",
   "No files yet. Add one using the Add Documents tab.": "Brak plików. Dodaj plik na karcie Dodaj dokumenty.",
@@ -2200,7 +2202,6 @@
   "Check this folder for new or modified files": "Sprawdź ten folder w poszukiwaniu nowych lub zmodyfikowanych plików",
   "Unlink folder": "Rozłącz folder",
   "Unlink {{path}}": "Rozłącz {{path}}",
-  "Unlinking stops future syncs. Files already imported remain in this knowledge base.": "Rozłączanie zapobiega przyszłej synchronizacji. Pliki już zaimportowane pozostają w tej bazie wiedzy.",
   "Sync now imports new or modified supported files. Deleted or renamed source files are not removed yet.": "Synchronizacja importuje nowe lub zmodyfikowane obsługiwane pliki. Usunięte pliki źródłowe ani pliki o zmienionych nazwach nie są jeszcze usuwane.",
   "Sync Process": "Proces synchronizacji",
   "Sync linked folder": "Synchronizuj połączony folder",
@@ -5536,5 +5537,11 @@
   "Applies to Chat, Solve, Ask Questions, Guided Learning, Reading, Course Study and standard visualizations. Changes take effect on the next turn.": "Dotyczy czatu, rozwiązywania, pytań, nauki z przewodnikiem, czytania, kursów i standardowych wizualizacji. Zmiany obowiązują od następnej tury.",
   "Clear instructions": "Wyczyść instrukcje",
   "{{used}} / {{limit}} characters": "{{used}} / {{limit}} znaków",
-  "contextBudget.segment.workspace_instructions": "Instrukcje obszaru roboczego"
+  "contextBudget.segment.workspace_instructions": "Instrukcje obszaru roboczego",
+  "Unlink this folder?": "Odłączyć ten folder?",
+  "Unlink and delete documents": "Odłącz i usuń dokumenty",
+  "Unlinking…": "Odłączanie…",
+  "This folder has imported {{count}} document(s) into this knowledge base. Unlinking deletes them together with the link.": "Ten folder zaimportował {{count}} dokument(ów) do tej bazy wiedzy. Odłączenie usuwa je razem z połączeniem.",
+  "The index is rebuilt afterwards, so their content stops being retrieved.": "Następnie indeks jest odbudowywany, więc ich treść przestaje być wyszukiwana.",
+  "The documents were removed, but the index could not be rebuilt automatically ({{error}}). Rebuild it to stop them from being retrieved.": "Dokumenty zostały usunięte, ale indeksu nie udało się odbudować automatycznie ({{error}}). Odbuduj go, aby przestały być wyszukiwane."
 }

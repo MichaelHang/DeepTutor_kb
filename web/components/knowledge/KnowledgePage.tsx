@@ -21,6 +21,7 @@ import type {
   IndexingLLMSelection,
   LinkedFolderInfo,
   SyncFolderResponse,
+  UnlinkFolderResult,
 } from "@/features/knowledge/model/types";
 
 const panelLoading = () => (
@@ -329,9 +330,9 @@ export default function KnowledgePage() {
   );
 
   const handleUnlinkFolder = useCallback(
-    async (kbName: string, folderId: string): Promise<void> => {
+    async (kbName: string, folderId: string): Promise<UnlinkFolderResult> => {
       try {
-        await unlinkFolder(kbName, folderId);
+        return await unlinkFolder(kbName, folderId);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
         throw err;

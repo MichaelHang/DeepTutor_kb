@@ -1111,6 +1111,8 @@
   "Pick any document from the list on the left to view it here without leaving the knowledge base.": "Pick any document from the list on the left to view it here without leaving the knowledge base.",
   "Collapse": "Collapse",
   "Expand": "Expand",
+  "Expand all": "Expand all",
+  "Collapse all": "Collapse all",
   "Show file list": "Show file list",
   "Hide file list": "Hide file list",
   "No files yet. Add one using the Add Documents tab.": "No files yet. Add one using the Add Documents tab.",
@@ -2201,7 +2203,6 @@
   "Check this folder for new or modified files": "Check this folder for new or modified files",
   "Unlink folder": "Unlink folder",
   "Unlink {{path}}": "Unlink {{path}}",
-  "Unlinking stops future syncs. Files already imported remain in this knowledge base.": "Unlinking stops future syncs. Files already imported remain in this knowledge base.",
   "Sync now imports new or modified supported files. Deleted or renamed source files are not removed yet.": "Sync now imports new or modified supported files. Deleted or renamed source files are not removed yet.",
   "Sync Process": "Sync Process",
   "Sync linked folder": "Sync linked folder",
@@ -5520,5 +5521,11 @@
   "Applies to Chat, Solve, Ask Questions, Guided Learning, Reading, Course Study and standard visualizations. Changes take effect on the next turn.": "Applies to Chat, Solve, Ask Questions, Guided Learning, Reading, Course Study and standard visualizations. Changes take effect on the next turn.",
   "Clear instructions": "Clear instructions",
   "{{used}} / {{limit}} characters": "{{used}} / {{limit}} characters",
-  "contextBudget.segment.workspace_instructions": "Workspace instructions"
+  "contextBudget.segment.workspace_instructions": "Workspace instructions",
+  "Unlink this folder?": "Unlink this folder?",
+  "Unlink and delete documents": "Unlink and delete documents",
+  "Unlinking…": "Unlinking…",
+  "This folder has imported {{count}} document(s) into this knowledge base. Unlinking deletes them together with the link.": "This folder has imported {{count}} document(s) into this knowledge base. Unlinking deletes them together with the link.",
+  "The index is rebuilt afterwards, so their content stops being retrieved.": "The index is rebuilt afterwards, so their content stops being retrieved.",
+  "The documents were removed, but the index could not be rebuilt automatically ({{error}}). Rebuild it to stop them from being retrieved.": "The documents were removed, but the index could not be rebuilt automatically ({{error}}). Rebuild it to stop them from being retrieved."
 }

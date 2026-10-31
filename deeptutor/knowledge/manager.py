@@ -21,6 +21,10 @@ import time
 from typing import Any
 from urllib.parse import urlparse
 
+from deeptutor.knowledge.add_documents import (
+    linked_folder_raw_paths,
+    remove_raw_documents,
+)
 from deeptutor.knowledge.kb_types import (
     IMA_KB_TYPE,
     LIGHTRAG_SERVER_KB_TYPE,
@@ -54,6 +58,7 @@ from deeptutor.services.rag.index_probe import (
     inspect_provider_version,
     provider_failure_summary,
 )
+from deeptutor.services.rag.visual_assets import VisualAssetStore
 from deeptutor.services.web_source.crawler import MAX_CRAWL_DEPTH, MAX_CRAWL_PAGES
 
 logger = logging.getLogger(__name__)
@@ -2052,16 +2057,23 @@ class KnowledgeBaseManager:
         except Exception:
             return []
 
-    def unlink_folder(self, kb_name: str, folder_id: str) -> bool:
+    def unlink_folder(self, kb_name: str, folder_id: str) -> dict | None:
         """
-        Unlink a folder from a knowledge base.
+        Unlink a folder from a knowledge base and delete the documents it imported.
+
+        A linked folder is a *source*: the files it contributes are copies in
+        ``raw/`` that only the link keeps in sync. Keeping them after the link
+        is gone would strand them — nothing could refresh or remove them
+        afterwards — so unlinking deletes the staged copies, their hash
+        records and their visual assets as well.
 
         Args:
             kb_name: Knowledge base name
             folder_id: Folder ID to unlink
 
         Returns:
-            True if unlinked successfully, False if not found
+            A summary of what was removed, or ``None`` when the folder was not
+            linked in the first place.
         """
         if kb_name not in self.list_knowledge_bases():
             raise ValueError(f"Knowledge base not found: {kb_name}")
@@ -2070,25 +2082,46 @@ class KnowledgeBaseManager:
         metadata_file = kb_dir / "metadata.json"
 
         if not metadata_file.exists():
-            return False
+            return None
 
         try:
             with open(metadata_file, encoding="utf-8") as f:
                 metadata = json.load(f)
         except Exception:
-            return False
+            return None
 
         linked = metadata.get("linked_folders", [])
-        new_linked = [f for f in linked if f["id"] != folder_id]
+        folder = next((f for f in linked if f["id"] == folder_id), None)
+        if folder is None:
+            return None  # Not found
 
-        if len(new_linked) == len(linked):
-            return False  # Not found
+        staged = linked_folder_raw_paths(
+            kb_dir, folder.get("path", ""), folder.get("synced_files") or {}
+        )
+        removals = remove_raw_documents(kb_dir, staged)
+        VisualAssetStore(kb_dir).remove_sources([removal.rel_path for removal in removals])
 
-        metadata["linked_folders"] = new_linked
+        # Removing the documents rewrote metadata.json, so the link has to be
+        # dropped from the *current* file: writing the copy read above would
+        # resurrect the hash records of the files just deleted.
+        try:
+            with open(metadata_file, encoding="utf-8") as f:
+                metadata = json.load(f)
+        except Exception:
+            metadata = {"linked_folders": []}
+        metadata["linked_folders"] = [
+            f for f in metadata.get("linked_folders", []) if f["id"] != folder_id
+        ]
 
         atomic_write_json(metadata_file, metadata)
 
-        return True
+        return {
+            "folder_id": folder_id,
+            "path": folder.get("path", ""),
+            "removed_files": [removal.rel_path for removal in removals],
+            "removed_count": len(removals),
+            "was_indexed": any(removal.was_indexed for removal in removals),
+        }
 
     def scan_linked_folder(self, folder_path: str, provider: str = DEFAULT_PROVIDER) -> list[str]:
         """

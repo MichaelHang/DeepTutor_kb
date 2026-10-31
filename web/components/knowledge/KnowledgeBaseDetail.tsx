@@ -27,6 +27,7 @@ import type {
   LinkedFolderInfo,
   KnowledgeUploadPolicy,
   SyncFolderResponse,
+  UnlinkFolderResult,
 } from "@/features/knowledge/model/types";
 import {
   formatKnowledgeTimestamp,
@@ -71,7 +72,7 @@ interface KnowledgeBaseDetailProps {
     kbName: string,
     folderPath: string,
   ) => Promise<LinkedFolderInfo>;
-  onUnlinkFolder: (kbName: string, folderId: string) => Promise<void>;
+  onUnlinkFolder: (kbName: string, folderId: string) => Promise<UnlinkFolderResult>;
   onSyncFolder: (
     kbName: string,
     folderId: string,

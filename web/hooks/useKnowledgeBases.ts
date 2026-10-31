@@ -34,6 +34,7 @@ import {
 import type {
   LinkedFolderInfo,
   SyncFolderResponse,
+  UnlinkFolderResult,
 } from "@/features/knowledge/model/types";
 import {
   DEFAULT_UPLOAD_POLICY,
@@ -369,12 +370,27 @@ export function useKnowledgeBases() {
   );
 
   const unlinkFolder = useCallback(
-    async (kbName: string, folderId: string): Promise<void> => {
-      await unlinkFolderApi(kbName, folderId);
+    async (kbName: string, folderId: string): Promise<UnlinkFolderResult> => {
+      const result = await unlinkFolderApi(kbName, folderId);
       invalidateKnowledgeCaches();
+      if (result.reindex_task_id) {
+        // The removed documents keep their vectors until the index is rebuilt,
+        // so the rebuild is surfaced as a task instead of a silent wait.
+        progress.startTask({
+          kbName,
+          taskId: result.reindex_task_id,
+          kind: "reindex",
+          label: `Re-index ${kbName}`,
+          initialLogs: [
+            "Removed the documents the linked folder had imported.",
+            "Waiting for backend indexing logs...",
+          ],
+        });
+      }
       await load({ force: true, showSpinner: false });
+      return result;
     },
-    [load],
+    [load, progress],
   );
 
   const syncLinkedFolder = useCallback(

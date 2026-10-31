@@ -1060,10 +1060,23 @@ export async function linkFolder(
   return (await res.json()) as LinkedFolderInfo;
 }
 
+export interface UnlinkFolderResult {
+  message: string;
+  folder_id: string;
+  /** Documents the linked folder had imported into this knowledge base. */
+  removed_count: number;
+  removed_files: string[];
+  /** Whether those documents were indexed, i.e. whether vectors had to go. */
+  was_indexed: boolean;
+  /** Rebuild queued so the removed documents stop being retrievable. */
+  reindex_task_id: string | null;
+  reindex_error: string | null;
+}
+
 export async function unlinkFolder(
   kbName: string,
   folderId: string,
-): Promise<void> {
+): Promise<UnlinkFolderResult> {
   const res = await apiFetch(
     apiUrl(
       `/api/knowledge-bases/${encodeURIComponent(kbName)}/linked-folders/${encodeURIComponent(folderId)}`,
@@ -1076,6 +1089,7 @@ export async function unlinkFolder(
     );
   }
   invalidateKnowledgeCaches();
+  return (await res.json()) as UnlinkFolderResult;
 }
 
 export async function syncLinkedFolder(

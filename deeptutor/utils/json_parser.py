@@ -181,6 +181,42 @@ def parse_json_response(
         return fallback
 
 
+def normalize_tool_call_arguments(raw: Any) -> str:
+    """Return tool-call arguments that a provider will accept on replay.
+
+    A model that reaches its output token cap while writing a tool call
+    leaves the argument JSON cut off mid-string. That text is still valid
+    *input* for the tool dispatcher — which repairs it before running
+    anything — but the assistant turn carries the raw fragment, and every
+    provider validates ``function.arguments`` as JSON. Replaying the turn
+    verbatim fails the whole request with HTTP 400, and a stored turn
+    poisons every later turn that replays it.
+
+    The repaired value has to agree with what the dispatcher parsed, or the
+    model is shown arguments the tool never saw. Dispatch resolves them with
+    :func:`parse_json_response` and drops anything that is not an object, so
+    this does the same.
+
+    Arguments that already parse are returned unchanged: re-serializing them
+    would rewrite the request prefix and cost the provider's prompt cache.
+    """
+    if isinstance(raw, dict):
+        return json.dumps(raw, ensure_ascii=False)
+    text = raw if isinstance(raw, str) else ""
+    if not text.strip():
+        return "{}"
+    try:
+        parsed = json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        pass
+    else:
+        return text if isinstance(parsed, dict) else "{}"
+    repaired = parse_json_response(text, fallback={})
+    if not isinstance(repaired, dict):
+        return "{}"
+    return json.dumps(repaired, ensure_ascii=False)
+
+
 def safe_json_loads(data: str, fallback: Any = _UNSET) -> Any:
     """
     Simple wrapper for safe JSON loading.

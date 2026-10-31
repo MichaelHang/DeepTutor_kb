@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from deeptutor.utils.json_parser import normalize_tool_call_arguments
+
 
 def image_content_hashes(messages: list[dict]) -> list[str]:
     """Hashes of bounded image bytes on the accepted provider wire (#1611)."""
@@ -68,7 +70,11 @@ def assistant_message_with_tool_calls(
             "type": "function",
             "function": {
                 "name": tool_call["name"],
-                "arguments": tool_call.get("arguments") or "{}",
+                # A round that hits the output token cap mid-call leaves the
+                # argument JSON cut off. The provider validates this field on
+                # every replay, so the raw fragment fails the whole next
+                # request with HTTP 400 — and the stored turn keeps failing.
+                "arguments": normalize_tool_call_arguments(tool_call.get("arguments")),
             },
         }
         # Gemini's OpenAI-compatible endpoint requires the exact opaque

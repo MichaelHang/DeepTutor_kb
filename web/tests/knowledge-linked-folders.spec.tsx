@@ -177,10 +177,17 @@ it("shows a retry action when the linked-folder list fails to load", async () =>
 });
 
 it("validates the link modal and confirms unlinking", async () => {
-  fixture.list.mockResolvedValue([folder]);
+  fixture.list.mockResolvedValue([{ ...folder, file_count: 3 }]);
   const onLinkFolder = vi.fn().mockResolvedValue(undefined);
-  const onUnlinkFolder = vi.fn().mockResolvedValue(undefined);
-  const confirm = vi.spyOn(window, "confirm");
+  const onUnlinkFolder = vi.fn().mockResolvedValue({
+    message: "Folder unlinked successfully",
+    folder_id: "folder-1",
+    removed_count: 3,
+    removed_files: ["a.md", "b.md", "c.md"],
+    was_indexed: true,
+    reindex_task_id: "reindex-task",
+    reindex_error: null,
+  });
 
   render(
     <KbLinkedFoldersSection
@@ -201,14 +208,54 @@ it("validates the link modal and confirms unlinking", async () => {
   );
 
   fireEvent.click(screen.getByRole("button", { name: "Close" }));
-  confirm.mockReturnValueOnce(false);
   fireEvent.click(screen.getByRole("button", { name: "Unlink /notes" }));
+  const confirmDialog = await screen.findByRole("alertdialog");
+  expect(confirmDialog).toHaveTextContent(
+    "This folder has imported 3 document(s) into this knowledge base.",
+  );
+  fireEvent.click(within(confirmDialog).getByRole("button", { name: "Cancel" }));
   expect(onUnlinkFolder).not.toHaveBeenCalled();
 
-  confirm.mockReturnValueOnce(true);
   fireEvent.click(screen.getByRole("button", { name: "Unlink /notes" }));
+  const confirmed = await screen.findByRole("alertdialog");
+  fireEvent.click(
+    within(confirmed).getByRole("button", { name: "Unlink and delete documents" }),
+  );
   await waitFor(() => expect(onUnlinkFolder).toHaveBeenCalledWith("folder-1"));
   expect(screen.queryByText("/notes")).not.toBeInTheDocument();
+});
+
+it("reports a failed index rebuild after unlinking", async () => {
+  fixture.list.mockResolvedValue([folder]);
+  const onUnlinkFolder = vi.fn().mockResolvedValue({
+    message: "Folder unlinked successfully",
+    folder_id: "folder-1",
+    removed_count: 1,
+    removed_files: ["a.md"],
+    was_indexed: true,
+    reindex_task_id: null,
+    reindex_error: "An indexing worker still owns this knowledge base.",
+  });
+
+  render(
+    <KbLinkedFoldersSection
+      kb={kb}
+      onLinkFolder={vi.fn()}
+      onUnlinkFolder={onUnlinkFolder}
+      onSyncFolder={vi.fn()}
+    />,
+  );
+
+  await waitFor(() => expect(screen.getByText("/notes")).toBeInTheDocument());
+  fireEvent.click(screen.getByRole("button", { name: "Unlink /notes" }));
+  const dialog = await screen.findByRole("alertdialog");
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Unlink and delete documents" }),
+  );
+
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "The documents were removed, but the index could not be rebuilt automatically",
+  );
 });
 
 it("keeps linked-folder controls disabled for a read-only knowledge base", async () => {

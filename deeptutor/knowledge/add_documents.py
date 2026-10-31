@@ -130,6 +130,69 @@ def _file_hash(file_path: Path) -> str:
     return sha256_hash.hexdigest()
 
 
+def _prune_empty_dirs(raw_dir: Path, file_path: Path) -> None:
+    """Drop directories that became empty after ``file_path`` was deleted.
+
+    A linked folder is staged under ``raw/<relative path>``, so removing its
+    imported documents would otherwise leave behind the folder shells it
+    contributed — visible in the file browser as folders that hold no document
+    at all. Only empty directories are removed, and ``raw/`` itself is kept.
+    """
+    root = raw_dir.resolve()
+    parent = file_path.resolve().parent
+    while parent != root and root in parent.parents:
+        try:
+            next(parent.iterdir())
+        except StopIteration:
+            try:
+                parent.rmdir()
+            except OSError:
+                return
+            parent = parent.parent
+            continue
+        except OSError:
+            return
+        return
+
+
+def rekey_moved_documents(kb_dir: Path, old_rel: str, new_rel: str) -> int:
+    """Re-point ``file_hashes`` records at a moved document or folder.
+
+    ``file_hashes`` is keyed by the path relative to ``raw/``, so relocating a
+    document must move its record as well. A stale record points at a path that
+    no longer exists: the moved document then looks unindexed on the next
+    rebuild (and gets indexed twice), and removing it later cannot clear the
+    record. Returns the number of re-keyed entries.
+    """
+    metadata_file = kb_dir / "metadata.json"
+    metadata = _read_metadata(metadata_file)
+    hashes = metadata.get("file_hashes")
+    if not isinstance(hashes, dict) or not hashes:
+        return 0
+
+    old_prefix = old_rel.strip("/")
+    new_prefix = new_rel.strip("/")
+    if not old_prefix or not new_prefix or old_prefix == new_prefix:
+        return 0
+
+    updated: dict[str, str] = {}
+    moved = 0
+    for key, value in hashes.items():
+        if key == old_prefix:
+            updated[new_prefix] = value
+            moved += 1
+        elif key.startswith(old_prefix + "/"):
+            updated[new_prefix + key[len(old_prefix) :]] = value
+            moved += 1
+        else:
+            updated[key] = value
+
+    if moved:
+        metadata["file_hashes"] = updated
+        _write_metadata(metadata_file, metadata)
+    return moved
+
+
 def hashes_for_indexed_files(file_paths: list[str], raw_dir: Path) -> dict[str, str]:
     """Hash source files already confirmed in an index, keyed by their raw path."""
     return {
@@ -157,6 +220,7 @@ def remove_raw_document(kb_dir: Path, file_path: Path) -> RawDocumentRemoval:
     target = file_path.resolve()
     if target.exists():
         target.unlink()
+        _prune_empty_dirs(raw_dir, target)
 
     metadata_file = kb_dir / "metadata.json"
     metadata = _read_metadata(metadata_file)
@@ -167,6 +231,130 @@ def remove_raw_document(kb_dir: Path, file_path: Path) -> RawDocumentRemoval:
         _write_metadata(metadata_file, metadata)
 
     return RawDocumentRemoval(rel_path=hash_key, was_indexed=was_indexed)
+
+
+def linked_folder_raw_paths(
+    kb_dir: Path, folder_path: str | Path, synced_files: dict[str, str]
+) -> list[Path]:
+    """Map a linked folder's tracked source files back to their staged copies.
+
+    A synced file is staged under ``raw/`` at its path relative to the linked
+    folder's root (see :meth:`DocumentAdder.add_documents`), so the same
+    relative path identifies the staged copy. Sources that no longer live
+    under that root — renamed or moved away — have no staged copy left to
+    clean up and are skipped.
+
+    A source file renamed *after* the sync keeps its old name in ``raw/``,
+    which the path lookup cannot find. Those are matched by content instead;
+    see :func:`_raw_paths_by_content_hash`.
+    """
+    raw_dir = kb_dir / "raw"
+    try:
+        root = Path(folder_path).expanduser().resolve()
+    except OSError:
+        return []
+
+    paths: list[Path] = []
+    seen: set[str] = set()
+    unmatched: list[Path] = []
+    for source in synced_files:
+        try:
+            relative = Path(source).resolve().relative_to(root)
+        except (OSError, ValueError):
+            continue
+        key = relative.as_posix()
+        if key in seen:
+            continue
+        seen.add(key)
+        candidate = raw_dir / relative
+        if candidate.is_file():
+            paths.append(candidate)
+        else:
+            unmatched.append(Path(source))
+
+    paths.extend(_raw_paths_by_content_hash(raw_dir, unmatched))
+    return paths
+
+
+def _raw_paths_by_content_hash(raw_dir: Path, source_files: list[Path]) -> list[Path]:
+    """Staged copies of ``source_files`` matched by content rather than by name.
+
+    A source file renamed after the sync keeps its old name in ``raw/``, and
+    the content hash is the only link left between the two. A hash carried by
+    several staged files is ambiguous, so it is left alone: deleting the
+    wrong copy of a document the user also uploaded by hand is worse than
+    leaving one behind.
+    """
+    if not source_files:
+        return []
+
+    source_hashes: dict[str, Path] = {}
+    for source in source_files:
+        try:
+            source_hashes.setdefault(_file_hash(source), source)
+        except OSError:
+            continue
+    if not source_hashes:
+        return []
+
+    # Hashing every staged file would read the whole knowledge base, so only
+    # files of a matching size are considered.
+    staged_sizes: dict[int, list[Path]] = {}
+    for candidate in raw_dir.rglob("*"):
+        if not candidate.is_file():
+            continue
+        try:
+            staged_sizes.setdefault(candidate.stat().st_size, []).append(candidate)
+        except OSError:
+            continue
+
+    matched: list[Path] = []
+    for digest, source in source_hashes.items():
+        try:
+            sizes = {source.stat().st_size}
+        except OSError:
+            continue
+        candidates: dict[str, Path] = {}
+        for size in sizes:
+            for candidate in staged_sizes.get(size, []):
+                try:
+                    if _file_hash(candidate) == digest:
+                        candidates[str(candidate)] = candidate
+                except OSError:
+                    continue
+        if len(candidates) == 1:
+            matched.append(next(iter(candidates.values())))
+    return matched
+
+
+def remove_raw_documents(kb_dir: Path, file_paths: list[Path]) -> list[RawDocumentRemoval]:
+    """Delete several staged raw files and drop their hash records in one pass.
+
+    Batched because a linked folder can contribute hundreds of files and
+    :func:`remove_raw_document` rewrites ``metadata.json`` once per file.
+    """
+    raw_dir = kb_dir / "raw"
+    metadata_file = kb_dir / "metadata.json"
+    metadata = _read_metadata(metadata_file)
+    hashes = metadata.get("file_hashes")
+    removals: list[RawDocumentRemoval] = []
+    dirty = False
+
+    for file_path in file_paths:
+        hash_key = _raw_hash_key(file_path, raw_dir)
+        target = file_path.resolve()
+        if target.exists():
+            target.unlink()
+            _prune_empty_dirs(raw_dir, target)
+        was_indexed = isinstance(hashes, dict) and hash_key in hashes
+        if was_indexed:
+            del hashes[hash_key]
+            dirty = True
+        removals.append(RawDocumentRemoval(rel_path=hash_key, was_indexed=was_indexed))
+
+    if dirty:
+        _write_metadata(metadata_file, metadata)
+    return removals
 
 
 class DocumentAdder:

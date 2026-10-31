@@ -78,6 +78,68 @@ def test_assistant_message_replays_gemini_thought_signature() -> None:
     }
 
 
+def test_truncated_tool_arguments_are_repaired_into_replayable_json() -> None:
+    """A call cut off by the output token cap must not poison the next request.
+
+    The model ran out of budget while writing the arguments, so the JSON is
+    cut off mid-string. Providers validate ``function.arguments``, so the
+    assistant turn carrying that fragment fails the whole following request
+    with HTTP 400 — and the stored turn keeps failing every later question.
+    """
+    message = assistant_message_with_tool_calls(
+        content="",
+        tool_calls=[
+            {"id": "call-1", "name": "exec", "arguments": '{"code": "print(1)\n'},
+        ],
+    )
+
+    arguments = message["tool_calls"][0]["function"]["arguments"]
+    assert json.loads(arguments) == {"code": "print(1)"}
+
+
+def test_repaired_arguments_agree_with_what_the_dispatcher_would_run() -> None:
+    """The replay must show the arguments the tool actually received.
+
+    Dispatch repairs the same text before running anything; if the replay
+    showed something else, the model would be told it called a tool with
+    arguments the tool never saw.
+    """
+    from deeptutor.utils.json_parser import parse_json_response
+
+    truncated = '{"code": "print(1)\n'
+    message = assistant_message_with_tool_calls(
+        content="",
+        tool_calls=[{"id": "call-1", "name": "exec", "arguments": truncated}],
+    )
+
+    arguments = message["tool_calls"][0]["function"]["arguments"]
+    dispatched = parse_json_response(truncated, fallback={})
+    assert json.loads(arguments) == dispatched
+
+
+def test_valid_tool_arguments_are_replayed_byte_for_byte() -> None:
+    """Re-serializing valid arguments would rewrite the request prefix.
+
+    The provider caches on that prefix, so a normalized copy of an argument
+    string the model already wrote valid would cost a cache hit for nothing.
+    """
+    message = assistant_message_with_tool_calls(
+        content="",
+        tool_calls=[{"id": "call-1", "name": "search", "arguments": '{"q":"one"}'}],
+    )
+
+    assert message["tool_calls"][0]["function"]["arguments"] == '{"q":"one"}'
+
+
+def test_arguments_that_are_not_an_object_replay_as_an_empty_object() -> None:
+    message = assistant_message_with_tool_calls(
+        content="",
+        tool_calls=[{"id": "call-1", "name": "search", "arguments": "[1, 2]"}],
+    )
+
+    assert message["tool_calls"][0]["function"]["arguments"] == "{}"
+
+
 @pytest.mark.asyncio
 async def test_openai_sdk_keeps_gemini_signature_in_request_body() -> None:
     captured: dict = {}

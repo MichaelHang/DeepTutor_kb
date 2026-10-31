@@ -138,18 +138,209 @@ def test_update_folder_sync_state_mtime_failure_is_visible_not_fake_synced(
     assert manager.detect_folder_changes("kb", folder_id)["new_files"] == [str(doc)]
 
 
-def test_unlink_removes_only_the_source_registration(tmp_path: Path) -> None:
-    manager, _metadata_file, folder_id, _doc = _manager_with_linked_folder(tmp_path)
+def test_unlink_removes_the_link_and_the_documents_it_imported(tmp_path: Path) -> None:
+    """Unlinking must not strand the copies the folder brought in.
+
+    Only the link keeps those copies in sync, so leaving them behind would
+    leave documents that nothing could refresh or remove afterwards.
+    """
+    manager, _metadata_file, folder_id, doc = _manager_with_linked_folder(tmp_path)
     kb_dir = manager.base_dir / "kb"
     raw_file = kb_dir / "raw" / "note.md"
+    uploaded = kb_dir / "raw" / "uploaded.md"
     index_marker = kb_dir / "version-1" / "index.marker"
     raw_file.parent.mkdir(parents=True)
     index_marker.parent.mkdir(parents=True)
     raw_file.write_text("imported", encoding="utf-8")
+    uploaded.write_text("uploaded", encoding="utf-8")
     index_marker.write_text("index", encoding="utf-8")
+    manager.update_folder_sync_state("kb", folder_id, [str(doc)])
 
-    assert manager.unlink_folder("kb", folder_id) is True
+    result = manager.unlink_folder("kb", folder_id)
 
+    assert result is not None
+    assert result["removed_count"] == 1
+    assert result["removed_files"] == ["note.md"]
     assert manager.get_linked_folders("kb") == []
-    assert raw_file.read_text(encoding="utf-8") == "imported"
+    assert not raw_file.exists()
+    assert uploaded.read_text(encoding="utf-8") == "uploaded"
     assert index_marker.read_text(encoding="utf-8") == "index"
+
+
+def test_unlink_removes_documents_from_nested_folders(tmp_path: Path) -> None:
+    """A folder's subdirectory structure is what identifies its staged copies."""
+    manager = KnowledgeBaseManager(base_dir=str(tmp_path / "kbs"))
+    kb_dir = manager.base_dir / "kb"
+    kb_dir.mkdir()
+    manager.register_knowledge_base("kb")
+
+    source = tmp_path / "notes"
+    (source / "sub").mkdir(parents=True)
+    doc = source / "sub" / "note.md"
+    doc.write_text("hello", encoding="utf-8")
+    folder_info = manager.link_folder("kb", str(source))
+
+    staged = kb_dir / "raw" / "sub" / "note.md"
+    staged.parent.mkdir(parents=True)
+    staged.write_text("imported", encoding="utf-8")
+    manager.update_folder_sync_state("kb", folder_info["id"], [str(doc)])
+
+    result = manager.unlink_folder("kb", folder_info["id"])
+
+    assert result is not None
+    assert result["removed_files"] == ["sub/note.md"]
+    assert not staged.exists()
+
+
+def test_unlink_removes_a_document_renamed_in_the_source_after_the_sync(
+    tmp_path: Path,
+) -> None:
+    """A source file renamed after the sync keeps its old name in ``raw/``.
+
+    The staged copy is still the folder's document, so unlinking has to find
+    it by content — otherwise it stays behind as an orphan.
+    """
+    manager = KnowledgeBaseManager(base_dir=str(tmp_path / "kbs"))
+    kb_dir = manager.base_dir / "kb"
+    kb_dir.mkdir()
+    manager.register_knowledge_base("kb")
+
+    source = tmp_path / "notes"
+    source.mkdir()
+    doc = source / "note.md"
+    doc.write_text("hello", encoding="utf-8")
+    folder_info = manager.link_folder("kb", str(source))
+
+    staged = kb_dir / "raw" / "old-name.md"
+    staged.parent.mkdir(parents=True)
+    staged.write_text("hello", encoding="utf-8")
+    manager.update_folder_sync_state("kb", folder_info["id"], [str(doc)])
+
+    renamed = source / "new-name.md"
+    doc.rename(renamed)
+    manager.update_folder_sync_state("kb", folder_info["id"], [str(renamed)])
+
+    result = manager.unlink_folder("kb", folder_info["id"])
+
+    assert result is not None
+    assert result["removed_files"] == ["old-name.md"]
+    assert not staged.exists()
+
+
+def test_unlink_keeps_an_ambiguous_copy_that_also_exists_as_a_direct_upload(
+    tmp_path: Path,
+) -> None:
+    """Identical content under two names is ambiguous, so neither is deleted."""
+    manager = KnowledgeBaseManager(base_dir=str(tmp_path / "kbs"))
+    kb_dir = manager.base_dir / "kb"
+    kb_dir.mkdir()
+    manager.register_knowledge_base("kb")
+
+    source = tmp_path / "notes"
+    source.mkdir()
+    doc = source / "note.md"
+    doc.write_text("hello", encoding="utf-8")
+    folder_info = manager.link_folder("kb", str(source))
+
+    raw_dir = kb_dir / "raw"
+    raw_dir.mkdir(parents=True)
+    (raw_dir / "old-name.md").write_text("hello", encoding="utf-8")
+    (raw_dir / "uploaded.md").write_text("hello", encoding="utf-8")
+    manager.update_folder_sync_state("kb", folder_info["id"], [str(doc)])
+
+    renamed = source / "new-name.md"
+    doc.rename(renamed)
+    manager.update_folder_sync_state("kb", folder_info["id"], [str(renamed)])
+
+    result = manager.unlink_folder("kb", folder_info["id"])
+
+    assert result is not None
+    assert result["removed_files"] == []
+    assert (raw_dir / "old-name.md").exists()
+    assert (raw_dir / "uploaded.md").exists()
+
+
+def test_unlink_drops_the_hash_records_of_the_removed_documents(tmp_path: Path) -> None:
+    """The index hash record must go too, or a later re-add is skipped."""
+    manager, metadata_file, folder_id, doc = _manager_with_linked_folder(tmp_path)
+    kb_dir = manager.base_dir / "kb"
+    raw_file = kb_dir / "raw" / "note.md"
+    raw_file.parent.mkdir(parents=True)
+    raw_file.write_text("imported", encoding="utf-8")
+    manager.update_folder_sync_state("kb", folder_id, [str(doc)])
+
+    metadata = json.loads(metadata_file.read_text(encoding="utf-8"))
+    metadata["file_hashes"] = {"note.md": "hash", "uploaded.md": "other-hash"}
+    metadata_file.write_text(json.dumps(metadata), encoding="utf-8")
+
+    result = manager.unlink_folder("kb", folder_id)
+
+    assert result is not None
+    assert result["was_indexed"] is True
+    on_disk = json.loads(metadata_file.read_text(encoding="utf-8"))
+    assert on_disk["file_hashes"] == {"uploaded.md": "other-hash"}
+
+
+def test_unlink_of_an_unknown_folder_removes_nothing(tmp_path: Path) -> None:
+    manager, _metadata_file, _folder_id, _doc = _manager_with_linked_folder(tmp_path)
+
+    assert manager.unlink_folder("kb", "no-such-id") is None
+    assert manager.get_linked_folders("kb") != []
+
+
+def test_unlink_drops_the_empty_folders_the_linked_folder_left_behind(tmp_path: Path) -> None:
+    """A folder shell without any document is noise, not a document.
+
+    The linked folder contributed the ``sub/`` tree under ``raw/``; deleting its
+    documents but keeping the directory would show the user a folder that holds
+    nothing at all.
+    """
+    manager = KnowledgeBaseManager(base_dir=str(tmp_path / "kbs"))
+    kb_dir = manager.base_dir / "kb"
+    kb_dir.mkdir()
+    manager.register_knowledge_base("kb")
+
+    source = tmp_path / "notes"
+    (source / "sub").mkdir(parents=True)
+    doc = source / "sub" / "note.md"
+    doc.write_text("hello", encoding="utf-8")
+    folder_info = manager.link_folder("kb", str(source))
+
+    staged = kb_dir / "raw" / "sub" / "note.md"
+    staged.parent.mkdir(parents=True)
+    staged.write_text("imported", encoding="utf-8")
+    manager.update_folder_sync_state("kb", folder_info["id"], [str(doc)])
+
+    result = manager.unlink_folder("kb", folder_info["id"])
+
+    assert result is not None
+    assert not staged.parent.exists()
+    assert (kb_dir / "raw").is_dir()
+
+
+def test_unlink_keeps_a_folder_that_still_holds_a_document(tmp_path: Path) -> None:
+    """Only the emptied directories may go — the rest is the user's own layout."""
+    manager = KnowledgeBaseManager(base_dir=str(tmp_path / "kbs"))
+    kb_dir = manager.base_dir / "kb"
+    kb_dir.mkdir()
+    manager.register_knowledge_base("kb")
+
+    source = tmp_path / "notes"
+    (source / "sub").mkdir(parents=True)
+    doc = source / "sub" / "note.md"
+    doc.write_text("hello", encoding="utf-8")
+    folder_info = manager.link_folder("kb", str(source))
+
+    staged = kb_dir / "raw" / "sub" / "note.md"
+    staged.parent.mkdir(parents=True)
+    staged.write_text("imported", encoding="utf-8")
+    kept = staged.parent / "kept.md"
+    kept.write_text("uploaded", encoding="utf-8")
+    manager.update_folder_sync_state("kb", folder_info["id"], [str(doc)])
+
+    result = manager.unlink_folder("kb", folder_info["id"])
+
+    assert result is not None
+    assert not staged.exists()
+    assert kept.read_text(encoding="utf-8") == "uploaded"
+    assert staged.parent.is_dir()

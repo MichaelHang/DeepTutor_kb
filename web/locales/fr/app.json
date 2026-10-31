@@ -1507,6 +1507,8 @@
   "Pick any document from the list on the left to view it here without leaving the knowledge base.": "Choisissez un document dans la liste de gauche pour le consulter ici sans quitter la base de connaissances.",
   "Collapse": "Réduire",
   "Expand": "Développer",
+  "Expand all": "Tout déplier",
+  "Collapse all": "Tout replier",
   "Show file list": "Afficher la liste des fichiers",
   "Hide file list": "Masquer la liste des fichiers",
   "No files yet. Add one using the Add Documents tab.": "Aucun fichier pour le moment. Ajoutez-en un depuis l'onglet Ajouter des documents.",
@@ -4314,7 +4316,6 @@
   "Check this folder for new or modified files": "Rechercher les fichiers nouveaux ou modifiés dans ce dossier",
   "Unlink folder": "Dissocier le dossier",
   "Unlink {{path}}": "Dissocier {{path}}",
-  "Unlinking stops future syncs. Files already imported remain in this knowledge base.": "La dissociation arrête les prochaines synchronisations. Les fichiers déjà importés restent dans cette base de connaissances.",
   "Sync now imports new or modified supported files. Deleted or renamed source files are not removed yet.": "Synchroniser maintenant importe les fichiers pris en charge nouveaux ou modifiés. Les fichiers source supprimés ou renommés ne sont pas encore retirés.",
   "Sync Process": "Processus de synchronisation",
   "Sync linked folder": "Synchroniser le dossier lié",
@@ -5899,5 +5900,11 @@
   "Applies to Chat, Solve, Ask Questions, Guided Learning, Reading, Course Study and standard visualizations. Changes take effect on the next turn.": "S’applique au chat, à la résolution, aux questions, à l’apprentissage guidé, à la lecture, aux cours et aux visualisations standard. Les changements prennent effet au prochain tour.",
   "Clear instructions": "Effacer les instructions",
   "{{used}} / {{limit}} characters": "{{used}} / {{limit}} caractères",
-  "contextBudget.segment.workspace_instructions": "Instructions de l’espace de travail"
+  "contextBudget.segment.workspace_instructions": "Instructions de l’espace de travail",
+  "Unlink this folder?": "Détacher ce dossier ?",
+  "Unlink and delete documents": "Détacher et supprimer les documents",
+  "Unlinking…": "Détachement…",
+  "This folder has imported {{count}} document(s) into this knowledge base. Unlinking deletes them together with the link.": "Ce dossier a importé {{count}} document(s) dans cette base de connaissances. Le détachement les supprime avec le lien.",
+  "The index is rebuilt afterwards, so their content stops being retrieved.": "L'index est ensuite reconstruit, afin que leur contenu ne soit plus récupéré.",
+  "The documents were removed, but the index could not be rebuilt automatically ({{error}}). Rebuild it to stop them from being retrieved.": "Les documents ont été supprimés, mais l'index n'a pas pu être reconstruit automatiquement ({{error}}). Reconstruisez-le pour qu'ils ne soient plus récupérés."
 }
