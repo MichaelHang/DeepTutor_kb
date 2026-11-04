@@ -245,8 +245,6 @@ jobs:
           - python-version: "3.14"
             os: ubuntu-24.04
           - python-version: "3.14"
-            os: macos-latest
-          - python-version: "3.14"
             os: windows-latest
 
     steps:
@@ -306,9 +304,8 @@ jobs:
     name: Python Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-24.04
     needs: import-check
-    # Run even when a sibling import check was cancelled. The check matrix
-    # spans macOS, and a macOS runner that never starts must not take the
-    # whole Python test matrix down with it.
+    # Run even when a sibling import check was cancelled. A runner that
+    # never starts must not take the whole Python test matrix down with it.
     if: always()
     services:
       redis:
@@ -385,7 +382,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-latest, windows-latest]
+        os: [ubuntu-24.04, windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -424,7 +421,7 @@ jobs:
           echo "| Lint and format | ${{ needs.lint.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Web node tests | ${{ needs.web-tests.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Four-worker browser acceptance | ${{ needs.multi-worker-web.result == 'success' && '✅ Passed' || needs.multi-worker-web.result == 'skipped' && '⏭️ Fixture not configured' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Import/lazy/worker check (3.11–3.14; 3.14 on Linux/macOS/Windows) | ${{ needs.import-check.result == 'success' && '✅ Passed' || needs.import-check.result == 'cancelled' && '⏭️ Runner unavailable' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Import/lazy/worker check (3.11–3.14; 3.14 on Linux/Windows) | ${{ needs.import-check.result == 'success' && '✅ Passed' || needs.import-check.result == 'cancelled' && '⏭️ Runner unavailable' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Python tests (3.11/3.12/3.13/3.14) | ${{ needs.python-tests.result == 'success' && '✅ Passed' || needs.python-tests.result == 'skipped' && '⏭️ Skipped' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
 
       - name: Fail if tests failed
