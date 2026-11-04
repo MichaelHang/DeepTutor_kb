@@ -4290,6 +4290,62 @@ async def reindex_knowledge_base(
         raise HTTPException(status_code=500, detail=format_exception_message(e))
 
 
+@router.delete("/knowledge-bases/{kb_name}/index-versions/{version}")
+async def delete_kb_index_version(kb_name: str, version: str) -> dict[str, Any]:
+    """Delete one stored index version of ``kb_name``.
+
+    Every full rebuild writes a fresh ``version-N`` directory, so a knowledge
+    base keeps the earlier ones around. Only the version that currently serves
+    retrieval is protected — the rest are leftovers and can be dropped to
+    reclaim disk space.
+    """
+    manager, resolved_name, _ = _writable_kb(kb_name)
+    kb_entry = _load_kb_entry_or_404(manager, resolved_name)
+    _assert_not_connected_kb(resolved_name, kb_entry)
+
+    if not re.fullmatch(r"version-\d+", version):
+        raise HTTPException(status_code=400, detail="Invalid index version")
+
+    from deeptutor.services.rag.embedding_binding import entry_signature
+    from deeptutor.services.rag.index_versioning import (
+        find_matching_version,
+        is_version_published,
+    )
+
+    kb_dir = manager.get_knowledge_base_path(resolved_name)
+    target = (kb_dir / version).resolve()
+    if kb_dir.resolve() not in target.parents or not target.is_dir():
+        raise HTTPException(status_code=404, detail="Index version not found")
+
+    if not is_version_published(target):
+        raise HTTPException(
+            status_code=409, detail="This version is still being built"
+        )
+
+    signature = entry_signature(kb_entry)
+    matched = find_matching_version(kb_dir, signature) if signature else None
+    if matched and matched.get("version") == version:
+        raise HTTPException(
+            status_code=409, detail="This version is currently serving retrieval"
+        )
+
+    shutil.rmtree(target)
+
+    # Keep the metadata pointer honest when it named the deleted version.
+    metadata_file = kb_dir / "metadata.json"
+    try:
+        metadata = json.loads(metadata_file.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        metadata = None
+    if isinstance(metadata, dict) and metadata.get("indexed_version") == version:
+        metadata["indexed_version"] = None
+        metadata_file.write_text(
+            json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+
+    return {"status": "ok", "deleted": version}
+
+
 @router.put("/knowledge-bases/{kb_name}/indexing-policy")
 async def update_pending_indexing_policy(
     kb_name: str,

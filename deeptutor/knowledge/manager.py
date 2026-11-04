@@ -1741,6 +1741,7 @@ class KnowledgeBaseManager:
         from deeptutor.services.rag.embedding_binding import entry_signature
 
         active_signature = None if pageindex_provider else entry_signature(kb_config)
+        active_version = None
         if provider_uses_embedding_versions(rag_provider):
             matched_entry = (
                 find_matching_version(kb_probe_dir, active_signature)
@@ -1749,6 +1750,10 @@ class KnowledgeBaseManager:
             )
             active_match = False
             if matched_entry:
+                # Only the newest ready version with a matching signature serves
+                # retrieval; older ones are leftovers that merely share the
+                # signature, so the version name is reported to say which one.
+                active_version = matched_entry.get("version")
                 # Reuse the probe results already computed for ``index_versions``
                 # instead of probing the matched storage a second time — probing
                 # parses provider-owned files (e.g. the multi-MB LlamaIndex
@@ -1774,6 +1779,7 @@ class KnowledgeBaseManager:
             "needs_reindex": effective_needs_reindex,
             "index_versions": index_versions,
             "active_signature": active_signature.hash() if active_signature else None,
+            "active_version": active_version,
             "active_match": active_match,
             # Include status and progress in statistics for backward compatibility
             "status": status,

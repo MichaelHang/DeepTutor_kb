@@ -99,6 +99,25 @@ def _read_json(path: Path) -> Optional[dict[str, Any]]:
         return None
 
 
+def is_version_published(version_dir: Path) -> bool:
+    """Return whether a guarded version directory finished publishing.
+
+    ``.building.json`` is a *permanent* publication guard: it is written when a
+    rebuild starts and stays behind after a successful publish, so its mere
+    presence does not mean "still building". A guarded version is only still
+    under construction while its stored metadata does not yet declare it
+    published — the same rule the index probe uses to accept a candidate.
+    """
+    if not (version_dir / ".building.json").exists():
+        return True
+    stored_meta = _read_json(version_dir / META_FILENAME)
+    if not stored_meta:
+        return False
+    if stored_meta.get("state") != "published":
+        return False
+    return bool(stored_meta.get("readiness_verified"))
+
+
 def _flat_version_number(path: Path) -> int:
     match = _VERSION_RE.match(path.name)
     return int(match.group(1)) if match else 0

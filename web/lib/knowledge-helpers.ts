@@ -209,6 +209,8 @@ export interface KnowledgeBase {
     progress?: ProgressInfo;
     index_versions?: IndexVersion[];
     active_signature?: string | null;
+    /** Version directory that currently serves retrieval (e.g. "version-179"). */
+    active_version?: string | null;
     active_match?: boolean;
   };
   source?: "admin" | "user";

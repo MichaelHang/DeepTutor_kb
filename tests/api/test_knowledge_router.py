@@ -2382,6 +2382,140 @@ def test_probe_folder_endpoint_finds_ready_index(tmp_path: Path) -> None:
     assert payload["version"] == "version-1"
 
 
+def _write_flat_version(kb_dir: Path, name: str, signature: str) -> Path:
+    """Create a ready flat index version directory."""
+    version_dir = kb_dir / name
+    version_dir.mkdir(parents=True, exist_ok=True)
+    (version_dir / "docstore.json").write_text("{}", encoding="utf-8")
+    (version_dir / "index_store.json").write_text("{}", encoding="utf-8")
+    (version_dir / "meta.json").write_text(
+        json.dumps({"version": name, "signature": signature, "layout": "flat"}),
+        encoding="utf-8",
+    )
+    return version_dir
+
+
+def test_delete_index_version_removes_an_older_rebuild(monkeypatch, tmp_path: Path) -> None:
+    """Rebuilds leave the previous version behind; it can be dropped by hand."""
+    manager = _ready_kb_manager(tmp_path)
+    kb_dir = manager.base_dir / "kb"
+    stale = _write_flat_version(kb_dir, "version-1", "sig-old")
+    _write_flat_version(kb_dir, "version-2", "sig-new")
+    monkeypatch.setattr(knowledge_router_module, "get_kb_manager", lambda: manager)
+    monkeypatch.setattr(knowledge_router_module, "_kb_base_dir", tmp_path / "knowledge_bases")
+
+    with TestClient(_build_app()) as client:
+        response = client.delete("/api/knowledge-bases/kb/index-versions/version-1")
+
+    assert response.status_code == 200
+    assert response.json()["deleted"] == "version-1"
+    assert not stale.exists()
+    assert (kb_dir / "version-2").is_dir()
+
+
+def test_delete_index_version_allows_a_published_version_with_a_building_guard(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """``.building.json`` is a permanent publication guard, not a live build flag.
+
+    Every rebuilt version keeps the marker after publishing, so its presence
+    alone must not make an old version undeletable.
+    """
+    manager = _ready_kb_manager(tmp_path)
+    kb_dir = manager.base_dir / "kb"
+    stale = _write_flat_version(kb_dir, "version-1", "sig-old")
+    (stale / ".building.json").write_text(json.dumps({"state": "building"}), encoding="utf-8")
+    (stale / "meta.json").write_text(
+        json.dumps(
+            {
+                "version": "version-1",
+                "signature": "sig-old",
+                "layout": "flat",
+                "provider": "llamaindex",
+                "state": "published",
+                "readiness_verified": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+    _write_flat_version(kb_dir, "version-2", "sig-new")
+    monkeypatch.setattr(knowledge_router_module, "get_kb_manager", lambda: manager)
+    monkeypatch.setattr(knowledge_router_module, "_kb_base_dir", tmp_path / "knowledge_bases")
+
+    with TestClient(_build_app()) as client:
+        response = client.delete("/api/knowledge-bases/kb/index-versions/version-1")
+
+    assert response.status_code == 200
+    assert not stale.exists()
+
+
+def test_delete_index_version_refuses_an_unpublished_candidate(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """A guarded version that never published is still under construction."""
+    manager = _ready_kb_manager(tmp_path)
+    kb_dir = manager.base_dir / "kb"
+    candidate = _write_flat_version(kb_dir, "version-1", "sig-old")
+    (candidate / ".building.json").write_text(json.dumps({"state": "building"}), encoding="utf-8")
+    (candidate / "meta.json").write_text(
+        json.dumps(
+            {
+                "version": "version-1",
+                "signature": "sig-old",
+                "layout": "flat",
+                "provider": "llamaindex",
+                "state": "building",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(knowledge_router_module, "get_kb_manager", lambda: manager)
+    monkeypatch.setattr(knowledge_router_module, "_kb_base_dir", tmp_path / "knowledge_bases")
+
+    with TestClient(_build_app()) as client:
+        response = client.delete("/api/knowledge-bases/kb/index-versions/version-1")
+
+    assert response.status_code == 409
+    assert candidate.is_dir()
+
+
+def test_delete_index_version_refuses_the_version_serving_retrieval(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """The live version must survive — deleting it would break the knowledge base."""
+    from deeptutor.services.rag.embedding_signature import signature_from_embedding_config
+
+    manager = _ready_kb_manager(tmp_path)
+    kb_dir = manager.base_dir / "kb"
+    active_signature = signature_from_embedding_config().hash()
+    live = _write_flat_version(kb_dir, "version-1", active_signature)
+    monkeypatch.setattr(knowledge_router_module, "get_kb_manager", lambda: manager)
+    monkeypatch.setattr(knowledge_router_module, "_kb_base_dir", tmp_path / "knowledge_bases")
+
+    with TestClient(_build_app()) as client:
+        response = client.delete("/api/knowledge-bases/kb/index-versions/version-1")
+
+    assert response.status_code == 409
+    assert live.is_dir()
+
+
+def test_delete_index_version_rejects_a_non_version_path(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """A traversal attempt must never reach outside the knowledge base."""
+    manager = _ready_kb_manager(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    monkeypatch.setattr(knowledge_router_module, "get_kb_manager", lambda: manager)
+    monkeypatch.setattr(knowledge_router_module, "_kb_base_dir", tmp_path / "knowledge_bases")
+
+    with TestClient(_build_app()) as client:
+        response = client.delete("/api/knowledge-bases/kb/index-versions/..%2Foutside")
+
+    assert response.status_code in {400, 404}
+    assert outside.is_dir()
+
+
 def test_probe_folder_endpoint_rejects_pageindex(tmp_path: Path) -> None:
     with TestClient(_build_app()) as client:
         response = client.post(

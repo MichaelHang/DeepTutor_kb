@@ -462,6 +462,7 @@ export default function KnowledgePage() {
             <KnowledgeBaseDetail
               kb={selectedKb}
               uploadPolicy={uploadPolicy}
+              onRefresh={() => refresh({ force: true, showSpinner: false })}
               task={
                 selectedKb ? tasksByKb[knowledgeBaseRef(selectedKb)] : undefined
               }

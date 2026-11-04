@@ -88,6 +88,8 @@ interface KnowledgeBaseDetailProps {
   onMove?: (kbName: string, targetWorkspaceId: string) => Promise<void>;
   onClearHistory: (kbName: string) => void;
   onBack?: () => void;
+  /** Re-read the knowledge base list so version/folder changes show up. */
+  onRefresh?: () => Promise<void> | void;
 }
 
 const SECTION_CHROME: Record<
@@ -125,6 +127,7 @@ export default function KnowledgeBaseDetail({
   onMove,
   onClearHistory,
   onBack,
+  onRefresh,
 }: KnowledgeBaseDetailProps) {
   const { t } = useTranslation();
   const [section, setSection] = useState<KbDetailSection>("files");
@@ -351,6 +354,7 @@ export default function KnowledgeBaseDetail({
                 <KbIndexVersionsSection
                   kb={kb}
                   task={task}
+                  onRefresh={onRefresh}
                   onReindex={(configFingerprint, embeddingModel) =>
                     kb.read_only
                       ? Promise.resolve()

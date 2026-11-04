@@ -1553,6 +1553,27 @@ export async function deleteKnowledgeBase(name: string): Promise<void> {
   invalidateKnowledgeCaches();
 }
 
+/**
+ * Delete one stored index version. Rebuilds write a fresh `version-N` every
+ * time, so the earlier ones pile up and only the newest serves retrieval.
+ */
+export async function deleteKbIndexVersion(
+  name: string,
+  version: string,
+): Promise<{ deleted: string }> {
+  const res = await apiFetch(
+    apiUrl(
+      `/api/knowledge-bases/${encodeURIComponent(name)}/index-versions/${encodeURIComponent(version)}`,
+    ),
+    { method: "DELETE" },
+  );
+  if (!res.ok) {
+    throw new Error(await readErrorDetail(res, "Failed to delete index version"));
+  }
+  invalidateKnowledgeCaches();
+  return (await res.json()) as { deleted: string };
+}
+
 // ── GitHub sources ───────────────────────────────────────────────────
 
 export interface GitHubSource {

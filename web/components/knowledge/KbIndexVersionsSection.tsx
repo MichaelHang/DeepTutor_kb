@@ -14,6 +14,7 @@ import {
   Loader2,
   RefreshCw,
   Star,
+  Trash2,
 } from "lucide-react";
 import {
   currentLightRagBuildCandidate,
@@ -37,6 +38,8 @@ import KbIndexFailureBanner from "./KbIndexFailureBanner";
 import LightRagIndexingProvenance from "./LightRagIndexingProvenance";
 import { knowledgeBaseRef } from "@/lib/knowledge-helpers";
 import LightRagEmbeddingWarning from "./LightRagEmbeddingWarning";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { deleteKbIndexVersion } from "@/features/knowledge/api/client";
 
 interface KbIndexVersionsSectionProps {
   kb: KnowledgeBase;
@@ -45,12 +48,15 @@ interface KbIndexVersionsSectionProps {
     configFingerprint?: string,
     embeddingModel?: EmbeddingModelSelection,
   ) => Promise<void>;
+  /** Re-reads the knowledge base list so a deleted version disappears. */
+  onRefresh?: () => Promise<void> | void;
 }
 
 export default function KbIndexVersionsSection({
   kb,
   task,
   onReindex,
+  onRefresh,
 }: KbIndexVersionsSectionProps) {
   const { t } = useTranslation();
   const [submitting, setSubmitting] = useState(false);
@@ -78,6 +84,27 @@ export default function KbIndexVersionsSection({
   const activeSig = modelInsensitiveProvider
     ? null
     : (kb.statistics?.active_signature ?? null);
+  const activeVersion = modelInsensitiveProvider
+    ? null
+    : (kb.statistics?.active_version ?? null);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [deletingVersion, setDeletingVersion] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const handleDeleteVersion = async (version: string) => {
+    setDeletingVersion(version);
+    setDeleteError(null);
+    try {
+      await deleteKbIndexVersion(knowledgeBaseRef(kb), version);
+      setDeleteTarget(null);
+      await onRefresh?.();
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : String(error));
+      setDeleteTarget(null);
+    } finally {
+      setDeletingVersion(null);
+    }
+  };
   const needsReindex = kbNeedsReindex(kb);
   const isError = resolveKbStatus(kb) === "error";
   const mismatch = Boolean(kb.metadata?.embedding_mismatch);
@@ -339,6 +366,7 @@ export default function KbIndexVersionsSection({
               }
               version={version}
               activeSignature={activeSig}
+              activeVersion={activeVersion}
               isPublishedLightRag={version === publishedLightRagVersion}
               isLightRagVersion={isLightRag}
               isLegacyLightRag={
@@ -348,6 +376,8 @@ export default function KbIndexVersionsSection({
               }
               isRebuildActive={version === buildingLightRagVersion}
               kbError={isError}
+              onDeleteVersion={(version) => setDeleteTarget(version)}
+              deletingVersion={deletingVersion}
             />
           ))}
         </ul>
@@ -356,6 +386,28 @@ export default function KbIndexVersionsSection({
           {t("No index versions yet.")}
         </div>
       )}
+
+      {deleteError && (
+        <div className="rounded-lg border border-red-200 bg-red-50/80 px-3 py-2 text-[12px] text-red-700 dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-300">
+          {deleteError}
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title={t("Delete this index version?")}
+        tone="danger"
+        confirmLabel={t("Delete")}
+        busy={deletingVersion !== null}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          if (deleteTarget) void handleDeleteVersion(deleteTarget);
+        }}
+      >
+        {t(
+          "This index version is left over from an earlier rebuild and is not serving retrieval. Deleting it frees its disk space.",
+        )}
+      </ConfirmDialog>
 
       <Modal
         isOpen={modelDialogOpen}
@@ -436,19 +488,25 @@ export default function KbIndexVersionsSection({
 function IndexVersionRow({
   version,
   activeSignature,
+  activeVersion,
   isPublishedLightRag,
   isLightRagVersion,
   isLegacyLightRag,
   isRebuildActive,
   kbError,
+  onDeleteVersion,
+  deletingVersion,
 }: {
   version: IndexVersion;
   activeSignature: string | null;
+  activeVersion: string | null;
   isPublishedLightRag: boolean;
   isLightRagVersion: boolean;
   isLegacyLightRag: boolean;
   isRebuildActive: boolean;
   kbError: boolean;
+  onDeleteVersion: (version: string) => void;
+  deletingVersion: string | null;
 }) {
   const { t } = useTranslation();
   const matchesActive =
@@ -461,13 +519,31 @@ function IndexVersionRow({
         legacy: isLegacyLightRag,
       })
     : null;
-  const isActive =
-    lightRagState === "published" ||
-    (!isLightRagVersion && matchesActive && version.ready === true);
+  // Only one version serves retrieval: the newest ready one with a matching
+  // signature. The others merely share that signature, so calling them all
+  // "active" would be wrong.
+  const isActive = lightRagState
+    ? lightRagState === "published"
+    : activeVersion
+      ? version.version === activeVersion
+      : matchesActive && version.ready === true;
   const isPhantom = matchesActive && version.ready !== true;
+  // A ready version that shares the active signature but is not the one
+  // serving retrieval: a leftover from an earlier rebuild.
+  const isHistorical =
+    !isLightRagVersion &&
+    !isActive &&
+    !isPhantom &&
+    matchesActive &&
+    version.ready === true;
   const isLegacy = lightRagState === "legacy" || !!version.legacy;
   const isFailedLightRagCandidate = lightRagState === "failed";
   const isBuildingLightRagCandidate = lightRagState === "building";
+  const canDelete =
+    !isActive &&
+    !isLegacy &&
+    typeof version.version === "string" &&
+    /^version-\d+$/.test(version.version);
 
   const title =
     version.version || (isLegacy ? t("Legacy index") : t("Unknown"));
@@ -475,11 +551,13 @@ function IndexVersionRow({
   const created = formatKnowledgeTimestamp(version.created_at);
   const statusHint = isActive
     ? t("Active version")
-    : isPhantom
-      ? t("Stale (matches active config but storage is empty)")
-      : isLegacy
-        ? t("Legacy index format")
-        : t("Inactive version");
+    : isHistorical
+      ? t("Historical version (kept from an earlier rebuild)")
+      : isPhantom
+        ? t("Stale (matches active config but storage is empty)")
+        : isLegacy
+          ? t("Legacy index format")
+          : t("Inactive version");
 
   return (
     <li className="flex items-center gap-3 px-3 py-2.5">
@@ -524,6 +602,11 @@ function IndexVersionRow({
           {isActive && (
             <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
               {t("Active")}
+            </span>
+          )}
+          {isHistorical && (
+            <span className="rounded-full bg-[var(--muted)] px-1.5 py-0.5 text-[10px] text-[var(--muted-foreground)]">
+              {t("Historical")}
             </span>
           )}
           {isPhantom && (
@@ -579,6 +662,24 @@ function IndexVersionRow({
             </details>
           )}
       </div>
+
+      {canDelete && (
+        <Tooltip label={t("Delete this index version")} side="top">
+          <button
+            type="button"
+            onClick={() => onDeleteVersion(version.version as string)}
+            disabled={deletingVersion === version.version}
+            aria-label={t("Delete this index version")}
+            className="shrink-0 rounded-md p-1 text-[var(--muted-foreground)] transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-40 dark:hover:bg-red-950/30 dark:hover:text-red-400"
+          >
+            {deletingVersion === version.version ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Trash2 className="h-3.5 w-3.5" />
+            )}
+          </button>
+        </Tooltip>
+      )}
     </li>
   );
 }
