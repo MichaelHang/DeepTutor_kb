@@ -4319,16 +4319,12 @@ async def delete_kb_index_version(kb_name: str, version: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="Index version not found")
 
     if not is_version_published(target):
-        raise HTTPException(
-            status_code=409, detail="This version is still being built"
-        )
+        raise HTTPException(status_code=409, detail="This version is still being built")
 
     signature = entry_signature(kb_entry)
     matched = find_matching_version(kb_dir, signature) if signature else None
     if matched and matched.get("version") == version:
-        raise HTTPException(
-            status_code=409, detail="This version is currently serving retrieval"
-        )
+        raise HTTPException(status_code=409, detail="This version is currently serving retrieval")
 
     shutil.rmtree(target)
 

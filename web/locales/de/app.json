@@ -4708,7 +4708,7 @@
   "This file exceeds the maximum size of {{size}}.": "Diese Datei überschreitet die Maximalgröße von {{size}}.",
   "This folder can't be linked": "Dieser Ordner kann nicht verknüpft werden",
   "This folder doesn't look like a .claude or .codex home. Please select the right folder.": "Dieser Ordner sieht nicht nach einem .claude- oder .codex-Verzeichnis aus. Bitte wähle den richtigen Ordner.",
-  "This folder has imported {{count}} document(s) into this knowledge base. Unlinking deletes them together with the link.": "Dieser Ordner hat {{count}} Dokument(e) in diese Wissensdatenbank importiert. Beim Aufheben der Verknüpfung werden sie zusammen mit der Verknüpfung gelöscht.",
+  "This folder has imported {{count}} document(s) into this knowledge base. Unlinking deletes them together with the link.": "Dieser Ordner hat {{count}} Dokument(e) in diese Knowledge Base importiert. Beim Aufheben der Verknüpfung werden sie zusammen mit der Verknüpfung gelöscht.",
   "This folder has no readable chat history. Pick your .claude or .codex folder.": "Dieser Ordner enthält keinen lesbaren Chat-Verlauf. Wähle deinen .claude- oder .codex-Ordner.",
   "This folder is empty": "Dieser Ordner ist leer",
   "This goal has no outline yet. Open a session and the tutor will design one with you.": "Dieses Ziel hat noch keine Gliederung. Öffne eine Sitzung und der Tutor entwirft gemeinsam mit dir eine.",

@@ -38,7 +38,17 @@ test("linked-folder API methods preserve encoded resource identifiers", async ()
     requests.push({ url: String(input), init });
     if (requests.length === 1) return jsonResponse(200, [folder]);
     if (requests.length === 2) return jsonResponse(200, folder);
-    if (requests.length === 3) return new Response(null, { status: 204 });
+    if (requests.length === 3) {
+      return jsonResponse(200, {
+        message: "Folder unlinked successfully",
+        folder_id: "folder/1",
+        removed_count: 2,
+        removed_files: ["/notes/a.md", "/notes/b.md"],
+        was_indexed: true,
+        reindex_task_id: "reindex-task",
+        reindex_error: null,
+      });
+    }
     return jsonResponse(200, {
       message: "Syncing 2 files from linked folder",
       folder_path: "/notes",
@@ -56,7 +66,9 @@ test("linked-folder API methods preserve encoded resource identifiers", async ()
       [folder],
     );
     assert.deepEqual(await linkFolder("Team Notes/2026", "/notes"), folder);
-    await unlinkFolder("Team Notes/2026", "folder/1");
+    const unlinked = await unlinkFolder("Team Notes/2026", "folder/1");
+    assert.equal(unlinked.removed_count, 2);
+    assert.equal(unlinked.reindex_task_id, "reindex-task");
     const result = await syncLinkedFolder("Team Notes/2026", "folder/1");
     assert.equal(result.task_id, "sync-task");
   } finally {

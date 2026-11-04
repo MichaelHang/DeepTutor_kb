@@ -373,9 +373,7 @@ class VisualAssetStore:
             return 0
         prior = self._read_manifest()
         updated = {
-            key: value
-            for key, value in prior.items()
-            if value.get("source_path") not in targets
+            key: value for key, value in prior.items() if value.get("source_path") not in targets
         }
         removed = len(prior) - len(updated)
         if not removed:

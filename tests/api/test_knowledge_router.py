@@ -1581,9 +1581,7 @@ def test_move_file_rekeys_its_hash_record(monkeypatch, tmp_path: Path) -> None:
     assert on_disk["file_hashes"] == {"Papers/demo.txt": "hash-demo"}
 
 
-def test_move_folder_rekeys_every_hash_record_below_it(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_move_folder_rekeys_every_hash_record_below_it(monkeypatch, tmp_path: Path) -> None:
     """Moving a folder relocates the records of all the documents inside it."""
     manager = _ready_kb_manager(tmp_path)
     kb_dir = manager.base_dir / "kb"
@@ -2449,9 +2447,7 @@ def test_delete_index_version_allows_a_published_version_with_a_building_guard(
     assert not stale.exists()
 
 
-def test_delete_index_version_refuses_an_unpublished_candidate(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_delete_index_version_refuses_an_unpublished_candidate(monkeypatch, tmp_path: Path) -> None:
     """A guarded version that never published is still under construction."""
     manager = _ready_kb_manager(tmp_path)
     kb_dir = manager.base_dir / "kb"
@@ -2483,12 +2479,27 @@ def test_delete_index_version_refuses_the_version_serving_retrieval(
     monkeypatch, tmp_path: Path
 ) -> None:
     """The live version must survive — deleting it would break the knowledge base."""
-    from deeptutor.services.rag.embedding_signature import signature_from_embedding_config
+    from deeptutor.services.rag import embedding_signature as embedding_signature_module
+    from deeptutor.services.rag.embedding_signature import (
+        EmbeddingSignature,
+        signature_from_embedding_config,
+    )
+
+    # Pin the active signature instead of reading it from the environment: a
+    # knowledge base without a configured embedding model has no signature at
+    # all, and CI runs without one.
+    active_signature = EmbeddingSignature(
+        binding="test", model="test-model", dimension=8, base_url="", api_version=""
+    )
+    monkeypatch.setattr(
+        embedding_signature_module,
+        "signature_from_embedding_config",
+        lambda: active_signature,
+    )
 
     manager = _ready_kb_manager(tmp_path)
     kb_dir = manager.base_dir / "kb"
-    active_signature = signature_from_embedding_config().hash()
-    live = _write_flat_version(kb_dir, "version-1", active_signature)
+    live = _write_flat_version(kb_dir, "version-1", active_signature.hash())
     monkeypatch.setattr(knowledge_router_module, "get_kb_manager", lambda: manager)
     monkeypatch.setattr(knowledge_router_module, "_kb_base_dir", tmp_path / "knowledge_bases")
 
@@ -2499,9 +2510,7 @@ def test_delete_index_version_refuses_the_version_serving_retrieval(
     assert live.is_dir()
 
 
-def test_delete_index_version_rejects_a_non_version_path(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_delete_index_version_rejects_a_non_version_path(monkeypatch, tmp_path: Path) -> None:
     """A traversal attempt must never reach outside the knowledge base."""
     manager = _ready_kb_manager(tmp_path)
     outside = tmp_path / "outside"

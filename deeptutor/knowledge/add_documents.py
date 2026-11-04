@@ -181,6 +181,8 @@ def rekey_moved_documents(kb_dir: Path, old_rel: str, new_rel: str) -> int:
         metadata["file_hashes"] = updated
         _write_metadata(metadata_file, metadata)
     return moved
+
+
 def hashes_for_indexed_files(file_paths: list[str], raw_dir: Path) -> dict[str, str]:
     """Hash source files already confirmed in an index, keyed by their raw path."""
     return {

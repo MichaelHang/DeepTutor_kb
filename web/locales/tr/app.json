@@ -4708,7 +4708,7 @@
   "This file exceeds the maximum size of {{size}}.": "Bu dosya {{size}} olan en yüksek boyutu aşıyor.",
   "This folder can't be linked": "Bu klasör bağlanamıyor",
   "This folder doesn't look like a .claude or .codex home. Please select the right folder.": "Bu klasör bir .claude ya da .codex ana dizinine benzemiyor. Lütfen doğru klasörü seçin.",
-  "This folder has imported {{count}} document(s) into this knowledge base. Unlinking deletes them together with the link.": "Bu klasör bu bilgi tabanına {{count}} belge aktardı. Bağlantıyı kaldırmak belgeleri bağlantıyla birlikte siler.",
+  "This folder has imported {{count}} document(s) into this knowledge base. Unlinking deletes them together with the link.": "Bu klasör bu bilgi bankasına {{count}} belge aktardı. Bağlantıyı kaldırmak belgeleri bağlantıyla birlikte siler.",
   "This folder has no readable chat history. Pick your .claude or .codex folder.": "Bu klasörde okunabilir sohbet geçmişi yok. .claude ya da .codex klasörünüzü seçin.",
   "This folder is empty": "Bu klasör boş",
   "This goal has no outline yet. Open a session and the tutor will design one with you.": "Bu hedefin henüz ana hattı yok. Bir oturum açın, eğitmen sizinle birlikte bir ana hat tasarlayacak.",
