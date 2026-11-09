@@ -478,3 +478,58 @@ def test_failed_folder_task_does_not_advance_sync_state(
 
     assert manager.update_calls == []
     assert manager.folder["last_sync"] == "previous-success"
+
+
+def test_partially_failed_folder_task_syncs_the_files_that_worked(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """一个文件解析失败时，已成功的文件仍要记进同步状态。"""
+    manager = _FolderManager(tmp_path)
+    _patch_manager(monkeypatch, manager)
+    source_root = tmp_path / "notes"
+    source_root.mkdir(parents=True)
+    good_source = source_root / "good.md"
+    good_source.write_text("good", encoding="utf-8")
+    bad_source = source_root / "bad.md"
+    bad_source.write_text("bad", encoding="utf-8")
+    staged_good = tmp_path / "kb" / "raw" / "good.md"
+    staged_bad = tmp_path / "kb" / "raw" / "bad.md"
+
+    class _PartiallyFailingAdder:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def add_documents(self, _paths, **_kwargs):
+            return [staged_good, staged_bad]
+
+        async def process_new_documents(self, _staged):
+            return SimpleNamespace(
+                processed_files=[staged_good],
+                processed_count=1,
+                has_failures=True,
+                failed_count=1,
+                failure_summary=lambda: "bad.md: indexing failed",
+                failures=[SimpleNamespace(file_path=staged_bad, error="indexing failed")],
+            )
+
+        def update_metadata(self, _count) -> None:
+            pass
+
+    monkeypatch.setattr(knowledge_router_module, "DocumentAdder", _PartiallyFailingAdder)
+
+    asyncio.run(
+        knowledge_router_module.run_upload_processing_task(
+            kb_name="kb",
+            base_dir=str(tmp_path),
+            uploaded_file_paths=[str(good_source), str(bad_source)],
+            task_id="folder-partial-test",
+            rag_provider="llamaindex",
+            folder_id="folder-1",
+            folder_root=str(source_root),
+        )
+    )
+
+    # The file that worked is synced, the one that failed is left for the
+    # next attempt.
+    assert manager.update_calls == [("kb", "folder-1", [str(good_source)])]
+    assert manager.inode_calls == [{str(good_source): good_source.stat().st_ino}]

@@ -337,3 +337,26 @@ def test_an_uploaded_file_survives_a_replaced_source(tmp_path: Path) -> None:
 
     assert staged.read_text(encoding="utf-8") == "用户上传的内容"
     assert (adder.raw_dir / "讲义 (2).md").read_text(encoding="utf-8") == "第二版"
+
+
+def test_a_failed_attempt_is_replaced_once_the_source_is_fixed(tmp_path: Path) -> None:
+    """上次解析失败留下的残file，源文件修好后由新版顶替，不留并列副本。"""
+    folder = tmp_path / "资料"
+    folder.mkdir()
+    source = folder / "讲义.md"
+    source.write_text("损坏的内容", encoding="utf-8")
+
+    adder = _adder(tmp_path)
+    staged = adder.raw_dir / "讲义.md"
+    staged.write_text("损坏的内容", encoding="utf-8")
+
+    # 上次同步失败：这个文件既没有 inode 记录，也没有索引记录
+    _write_linked_state(tmp_path, folder, {})
+
+    # 用户把源文件修好了
+    source.write_text("修好的内容", encoding="utf-8")
+
+    adder.add_documents([str(source)], source_root=folder)
+
+    assert staged.read_text(encoding="utf-8") == "修好的内容"
+    assert not (adder.raw_dir / "讲义 (2).md").exists()

@@ -381,26 +381,27 @@ def linked_source_inodes(kb_dir: Path, source_root: Path) -> dict[str, int]:
     return {}
 
 
-def drop_stale_staged_link(
+def replace_unusable_staged_copy(
     source_path: Path,
     dest_path: Path,
     source_inodes: dict[str, int],
+    indexed_hash: str | None = None,
 ) -> bool:
-    """Remove a staged link that points at a version of the source that is gone.
+    """Replace a staged copy that no longer stands for the source.
 
-    The source was replaced by a new file — what an editor does when it saves
-    through a temporary file — so the staged copy points at a version the
-    user no longer has. Dropping it lets the current version be staged in
-    its place instead of piling up beside the old one.
+    Two cases leave a staged copy that should not be there:
 
-    The staged copy is only dropped when it still is the link made at the
-    last sync. A file the user uploaded under the same name has its own
-    inode and is theirs to keep. Returns True when the stale copy was
-    removed.
+    - The source was replaced by a new file — what an editor does when it
+      saves through a temporary file — so the staged copy points at a
+      version the user no longer has.
+    - The staged copy never made it into the index, because the document
+      failed to parse, and the source has since been fixed. The failed
+      attempt is left over, and the corrected file belongs in its place.
+
+    A file the user uploaded under the same name is left alone: it has its
+    own inode and its own hash, so neither case applies. Returns True when
+    the copy was removed.
     """
-    recorded = source_inodes.get(str(source_path))
-    if recorded is None:
-        return False
     if not dest_path.is_file():
         return False
     try:
@@ -408,14 +409,26 @@ def drop_stale_staged_link(
         current_inode = source_path.stat().st_ino
     except OSError:
         return False
-    if current_inode == recorded:
-        # The source itself is unchanged, so the staged copy already shows
-        # its content — nothing to replace.
-        return False
-    if dest_inode != recorded:
-        # Not the link made at the last sync, so it is not a stale version
-        # of the source.
-        return False
+
+    recorded = source_inodes.get(str(source_path))
+    if recorded is None:
+        # The source was never synced successfully, so whatever sits at
+        # this path could be the leftover of a failed attempt. It is only
+        # that when the copy stands on its own: a copy that is still
+        # linked to another source belongs to that source, and a copy that
+        # made it into the index is a document in its own right.
+        if indexed_hash is not None or is_hardlinked(dest_path):
+            return False
+    else:
+        if current_inode == recorded:
+            # The source itself is unchanged, so the staged copy already
+            # shows its content — nothing to replace.
+            return False
+        if dest_inode != recorded:
+            # Not the link made at the last sync, so it is not a stale
+            # version of the source.
+            return False
+
     try:
         dest_path.unlink()
     except OSError:
@@ -630,10 +643,16 @@ class DocumentAdder:
                 from_linked_root = False
 
             if from_linked_root and hardlink_allowed:
-                # The source may have been replaced rather than edited, in
-                # which case the staged copy is a version the user no longer
-                # has. Clear it so the current version takes its place.
-                drop_stale_staged_link(source_path, dest_path, source_inodes)
+                # The staged copy may no longer stand for the source: the
+                # source may have been replaced rather than edited, or the
+                # copy may be the leftover of a failed attempt. Clear it so
+                # the current version takes its place.
+                replace_unusable_staged_copy(
+                    source_path,
+                    dest_path,
+                    source_inodes,
+                    ingested_hashes.get(_raw_hash_key(dest_path, self.raw_dir)),
+                )
 
             staged_path, copied = stage_source(
                 source_path,

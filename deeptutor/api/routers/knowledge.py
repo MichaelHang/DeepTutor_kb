@@ -1137,6 +1137,38 @@ async def run_initialization_task(
             task_stream_manager.emit_failed(task_id, error_msg, **failure_metadata)
 
 
+def _synced_source_paths(
+    uploaded_file_paths: list[str],
+    failed_files: list[Path],
+    base_dir: str,
+    kb_name: str,
+    folder_root: str | None,
+) -> list[str]:
+    """The source paths that count as synced after this run.
+
+    A linked folder's documents are staged under ``raw/`` at their path
+    relative to the folder root, so a staged path points back at the source
+    it came from.
+
+    Everything in the batch counts except the documents that failed to
+    index: those stay unrecorded, so the next sync retries them instead of
+    treating them as done. A document that was skipped because it is already
+    indexed counts as synced — it is, and running it again would cost
+    another pass for nothing.
+    """
+    if not folder_root:
+        return []
+    raw_root = (Path(base_dir) / kb_name / "raw").resolve()
+    failed: set[str] = set()
+    for failed_file in failed_files:
+        try:
+            relative = failed_file.resolve().relative_to(raw_root)
+        except (OSError, ValueError):
+            continue
+        failed.add(os.path.normpath(str(Path(folder_root) / relative)))
+    return [path for path in uploaded_file_paths if os.path.normpath(path) not in failed]
+
+
 async def run_upload_processing_task(
     kb_name: str,
     base_dir: str,
@@ -1321,6 +1353,46 @@ async def run_upload_processing_task(
                         f"{failure.file_path}: {failure.error}" for failure in index_result.failures
                     ),
                 )
+                if folder_id:
+                    # The files that are in place are synced all the same.
+                    # Leaving the folder state untouched would make the next
+                    # sync treat every one of them as changed, and would lose
+                    # the record of which source each staged link points at.
+                    # A file that failed is left out, so the next sync retries
+                    # it instead of treating it as done.
+                    try:
+                        manager = get_kb_manager()
+                        synced_files = _synced_source_paths(
+                            uploaded_file_paths,
+                            [failure.file_path for failure in index_result.failures],
+                            base_dir,
+                            kb_name,
+                            folder_root,
+                        )
+                        if synced_files:
+                            synced_set = set(synced_files)
+                            manager.update_folder_sync_state(
+                                kb_name,
+                                folder_id,
+                                synced_files,
+                                {
+                                    key: value
+                                    for key, value in source_mtimes.items()
+                                    if key in synced_set
+                                },
+                                {
+                                    key: value
+                                    for key, value in source_inodes.items()
+                                    if key in synced_set
+                                },
+                            )
+                            _task_log(task_id, f"Updated folder sync state: {folder_id}")
+                    except Exception as sync_err:
+                        _task_log(
+                            task_id,
+                            f"Folder sync state update failed: {sync_err}",
+                            level="warning",
+                        )
                 return
 
             index_published = rag_provider == LIGHTRAG_PROVIDER and bool(
