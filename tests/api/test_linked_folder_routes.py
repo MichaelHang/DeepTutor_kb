@@ -60,6 +60,7 @@ class _FolderManager:
             "was_indexed": False,
         }
         self.cleaned: list[str | None] = []
+        self.removal_calls: list[tuple[str, str, list[str]]] = []
         self.detect_result = {
             "new_files": [],
             "modified_files": [],
@@ -94,6 +95,16 @@ class _FolderManager:
 
     def detect_folder_changes(self, _kb_name: str, _folder_id: str) -> dict:
         return self.detect_result
+
+    def remove_folder_documents(
+        self, kb_name: str, folder_id: str, source_paths: list[str]
+    ) -> dict:
+        self.removal_calls.append((kb_name, folder_id, source_paths))
+        return {
+            "removed_files": ["note.md"],
+            "removed_count": 1,
+            "was_indexed": True,
+        }
 
     def update_folder_sync_state(
         self,
@@ -176,8 +187,42 @@ def test_noop_sync_records_success_and_returns_sync_contract(
         "modified_files": 0,
         "file_count": 0,
         "task_id": None,
+        "removed_files": [],
+        "reindex_task_id": None,
+        "reindex_error": None,
     }
     assert manager.update_calls == [("kb", "folder-1", [])]
+
+
+def test_sync_removes_documents_that_are_gone_from_the_folder(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """源目录里消失的文档要离开知识库，索引随之重建。"""
+    manager = _FolderManager(tmp_path)
+    gone = str(tmp_path / "notes" / "gone.md")
+    manager.detect_result = {
+        "new_files": [],
+        "modified_files": [],
+        "deleted_files": [gone],
+        "new_count": 0,
+        "modified_count": 0,
+    }
+    _patch_manager(monkeypatch, manager)
+
+    async def _fake_purge(*_args, **_kwargs):
+        return "reindex-task", None
+
+    monkeypatch.setattr(knowledge_router_module, "_purge_unlinked_documents", _fake_purge)
+
+    with TestClient(_build_app()) as client:
+        response = client.post("/api/knowledge-bases/kb/sync-folder/folder-1")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["removed_files"] == ["note.md"]
+    assert body["reindex_task_id"] == "reindex-task"
+    assert body["reindex_error"] is None
+    assert manager.removal_calls == [("kb", "folder-1", [gone])]
 
 
 def test_queued_sync_returns_counts_and_task_id(

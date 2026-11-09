@@ -288,6 +288,68 @@ def test_unlink_of_an_unknown_folder_removes_nothing(tmp_path: Path) -> None:
     assert manager.get_linked_folders("kb") != []
 
 
+def test_change_detection_reports_files_that_are_gone_from_the_folder(tmp_path: Path) -> None:
+    """A file the user deleted must be reported, not silently left behind."""
+    manager, _metadata_file, folder_id, doc = _manager_with_linked_folder(tmp_path)
+    manager.update_folder_sync_state("kb", folder_id, [str(doc)])
+
+    doc.unlink()
+
+    changes = manager.detect_folder_changes("kb", folder_id)
+
+    assert changes["deleted_files"] == [str(doc)]
+    assert changes["has_changes"] is True
+
+
+def test_change_detection_reports_nothing_when_the_folder_is_unreachable(tmp_path: Path) -> None:
+    """An unmounted volume must not make every file look deleted.
+
+    Reporting all of them would let a single unreachable drive wipe the
+    knowledge base on the next sync.
+    """
+    manager, _metadata_file, folder_id, doc = _manager_with_linked_folder(tmp_path)
+    manager.update_folder_sync_state("kb", folder_id, [str(doc)])
+    doc.unlink()
+
+    source = tmp_path / "notes"
+    source.rename(tmp_path / "notes-moved")
+
+    changes = manager.detect_folder_changes("kb", folder_id)
+
+    assert changes["deleted_files"] == []
+
+
+def test_removing_a_vanished_document_leaves_the_knowledge_base(tmp_path: Path) -> None:
+    """The staged copy, its hash record and the sync state all go away."""
+    manager, metadata_file, folder_id, doc = _manager_with_linked_folder(tmp_path)
+    kb_dir = manager.base_dir / "kb"
+    raw_file = kb_dir / "raw" / "note.md"
+    uploaded = kb_dir / "raw" / "uploaded.md"
+    raw_file.parent.mkdir(parents=True)
+    raw_file.write_text("imported", encoding="utf-8")
+    uploaded.write_text("uploaded", encoding="utf-8")
+    manager.update_folder_sync_state("kb", folder_id, [str(doc)])
+
+    metadata = json.loads(metadata_file.read_text(encoding="utf-8"))
+    metadata["file_hashes"] = {"note.md": "hash", "uploaded.md": "other-hash"}
+    metadata_file.write_text(json.dumps(metadata), encoding="utf-8")
+
+    doc.unlink()
+    result = manager.remove_folder_documents("kb", folder_id, [str(doc)])
+
+    assert result["removed_count"] == 1
+    assert result["removed_files"] == ["note.md"]
+    assert result["was_indexed"] is True
+    assert not raw_file.exists()
+    assert uploaded.read_text(encoding="utf-8") == "uploaded"
+
+    on_disk = json.loads(metadata_file.read_text(encoding="utf-8"))
+    assert on_disk["file_hashes"] == {"uploaded.md": "other-hash"}
+    folder = on_disk["linked_folders"][0]
+    assert str(doc) not in folder["synced_files"]
+    assert folder["file_count"] == 0
+
+
 def test_unlink_drops_the_empty_folders_the_linked_folder_left_behind(tmp_path: Path) -> None:
     """A folder shell without any document is noise, not a document.
 

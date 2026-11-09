@@ -222,6 +222,9 @@ class SyncFolderResponse(BaseModel):
     modified_files: int
     file_count: int
     task_id: str | None
+    removed_files: list[str] = []
+    reindex_task_id: str | None = None
+    reindex_error: str | None = None
 
 
 class SupportedFileTypesInfo(BaseModel):
@@ -5042,9 +5045,52 @@ async def sync_folder(kb_name: str, folder_id: str, background_tasks: Background
 
         folder_path = folder_info["path"]
 
-        # Check for changes (new or modified files)
+        # Check for changes: files that are new, files that changed, and
+        # files that are gone from the folder.
         changes = manager.detect_folder_changes(kb_name, folder_id)
+        deleted_sources = changes.get("deleted_files") or []
         files_to_process = changes["new_files"] + changes["modified_files"]
+
+        if deleted_sources:
+            # A document the user removed from the folder must stop answering
+            # questions: its copy leaves the knowledge base, and the index is
+            # rebuilt so its vectors go with it.
+            removal = manager.remove_folder_documents(kb_name, folder_id, deleted_sources)
+            logger.info(
+                "Removed %s document(s) of '%s' that are gone from the folder",
+                removal["removed_count"],
+                folder_path,
+            )
+            if files_to_process:
+                # New and changed documents join the rebuild, so the knowledge
+                # base ends up in step with the folder in one go.
+                adder = DocumentAdder(
+                    kb_name=kb_name,
+                    base_dir=str(kb_base_dir),
+                    rag_provider=kb_provider,
+                )
+                adder.add_documents(files_to_process, source_root=folder_path)
+            reindex_task_id, reindex_error = await _purge_unlinked_documents(
+                manager,
+                kb_name,
+                kb_name,
+                kb_base_dir,
+                kb_entry,
+                removal,
+                background_tasks,
+            )
+            return SyncFolderResponse(
+                message="Removed documents that are gone from the linked folder",
+                folder_path=folder_path,
+                files=[],
+                new_files=len(changes["new_files"]),
+                modified_files=len(changes["modified_files"]),
+                file_count=folder_info.get("file_count", 0),
+                task_id=reindex_task_id,
+                removed_files=removal["removed_files"],
+                reindex_task_id=reindex_task_id,
+                reindex_error=reindex_error,
+            )
 
         if not files_to_process:
             # A completed scan is a successful sync even when it found no work.

@@ -965,6 +965,9 @@ export interface SyncFolderResponse {
   modified_files: number;
   file_count: number;
   task_id: string | null;
+  removed_files: string[];
+  reindex_task_id: string | null;
+  reindex_error: string | null;
 }
 
 export async function probeLinkedFolder(payload: {

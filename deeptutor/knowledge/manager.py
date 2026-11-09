@@ -2149,19 +2149,99 @@ class KnowledgeBaseManager:
 
         return sorted(files)
 
+    def remove_folder_documents(
+        self, kb_name: str, folder_id: str, source_paths: list[str]
+    ) -> dict:
+        """Remove the documents of vanished *source_paths* from the knowledge base.
+
+        A source file that is gone from the linked folder must stop answering
+        questions, so its staged copy is deleted together with the records
+        that point at it — the index hash, the extracted images and the
+        folder's own sync state. The published index still holds their
+        vectors, so the caller has to rebuild it afterwards.
+
+        Returns a summary of what was removed.
+        """
+        if kb_name not in self.list_knowledge_bases():
+            raise ValueError(f"Knowledge base not found: {kb_name}")
+
+        kb_dir = self.base_dir / kb_name
+        metadata_file = kb_dir / "metadata.json"
+        empty = {"removed_files": [], "removed_count": 0, "was_indexed": False}
+        if not metadata_file.exists():
+            return empty
+
+        try:
+            with open(metadata_file, encoding="utf-8") as f:
+                metadata = json.load(f)
+        except Exception:
+            return empty
+
+        folder = next(
+            (f for f in metadata.get("linked_folders", []) if f.get("id") == folder_id), None
+        )
+        if folder is None:
+            return empty
+
+        synced_files = dict(folder.get("synced_files") or {})
+        targets = {path: synced_files[path] for path in source_paths if path in synced_files}
+        staged = linked_folder_raw_paths(kb_dir, folder.get("path", ""), targets)
+        removals = remove_raw_documents(kb_dir, staged)
+        VisualAssetStore(kb_dir).remove_sources([removal.rel_path for removal in removals])
+
+        # Removing the documents rewrote metadata.json, so the folder state
+        # has to be written to the copy read above: writing the older one
+        # would resurrect the hash records of the files just deleted.
+        try:
+            with open(metadata_file, encoding="utf-8") as f:
+                metadata = json.load(f)
+        except Exception:
+            metadata = {"linked_folders": []}
+        folder = next(
+            (f for f in metadata.get("linked_folders", []) if f.get("id") == folder_id), None
+        )
+        if folder is None:
+            return empty
+
+        synced_files = dict(folder.get("synced_files") or {})
+        for path in source_paths:
+            synced_files.pop(path, None)
+        folder["synced_files"] = synced_files
+        folder["file_count"] = len(synced_files)
+
+        inodes = folder.get("synced_inodes")
+        if isinstance(inodes, dict):
+            for path in source_paths:
+                inodes.pop(path, None)
+            folder["synced_inodes"] = inodes
+
+        atomic_write_json(metadata_file, metadata)
+
+        return {
+            "removed_files": [removal.rel_path for removal in removals],
+            "removed_count": len(removals),
+            "was_indexed": any(removal.was_indexed for removal in removals),
+        }
+
     def detect_folder_changes(self, kb_name: str, folder_id: str) -> dict:
         """
-        Detect new and modified files in a linked folder since last sync.
+        Detect new, modified and deleted files in a linked folder since last sync.
 
         This enables automatic sync of changes from local folders that may
         be synced with cloud services like SharePoint, Google Drive, etc.
+
+        A file that is gone from the folder is reported as deleted, so the
+        knowledge base can stop answering from it. The folder itself has to
+        be readable for that: a volume that is not mounted would make every
+        file look deleted, and nothing is reported in that case.
 
         Args:
             kb_name: Knowledge base name
             folder_id: Folder ID to check for changes
 
         Returns:
-            Dict with 'new_files', 'modified_files', and 'has_changes' keys
+            Dict with 'new_files', 'modified_files', 'deleted_files' and
+            'has_changes' keys
         """
         if kb_name not in self.list_knowledge_bases():
             raise ValueError(f"Knowledge base not found: {kb_name}")
@@ -2196,12 +2276,24 @@ class KnowledgeBaseManager:
                 # New file (not in synced files)
                 new_files.append(file_str)
 
+        deleted_files: list[str] = []
+        try:
+            folder_readable = folder_path.is_dir()
+        except OSError:
+            folder_readable = False
+        if folder_readable:
+            deleted_files = sorted(
+                file_str for file_str in synced_files if not Path(file_str).exists()
+            )
+
         return {
             "new_files": sorted(new_files),
             "modified_files": sorted(modified_files),
-            "has_changes": len(new_files) > 0 or len(modified_files) > 0,
+            "deleted_files": deleted_files,
+            "has_changes": bool(new_files or modified_files or deleted_files),
             "new_count": len(new_files),
             "modified_count": len(modified_files),
+            "deleted_count": len(deleted_files),
         }
 
     def update_folder_sync_state(
