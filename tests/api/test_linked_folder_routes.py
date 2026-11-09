@@ -51,6 +51,7 @@ class _FolderManager:
         }
         self.update_calls: list[tuple[str, str, list[str]]] = []
         self.mtime_calls: list[dict[str, str] | None] = []
+        self.inode_calls: list[dict[str, int] | None] = []
         self.unlink_result = {
             "folder_id": "folder-1",
             "path": str(base_dir / "notes"),
@@ -100,9 +101,11 @@ class _FolderManager:
         folder_id: str,
         files: list[str],
         source_mtimes: dict[str, str] | None = None,
+        source_inodes: dict[str, int] | None = None,
     ) -> None:
         self.update_calls.append((kb_name, folder_id, files))
         self.mtime_calls.append(source_mtimes)
+        self.inode_calls.append(source_inodes)
 
     def update_kb_status(self, name: str, status: str, progress: dict | None = None) -> None:
         self.config["knowledge_bases"][name]["status"] = status
@@ -388,6 +391,7 @@ def test_completed_folder_task_records_source_paths(
     assert manager.mtime_calls == [
         {str(source_path): datetime.fromtimestamp(source_path.stat().st_mtime).isoformat()}
     ]
+    assert manager.inode_calls == [{str(source_path): source_path.stat().st_ino}]
 
 
 def test_empty_completed_folder_task_advances_sync_state(
@@ -427,6 +431,7 @@ def test_empty_completed_folder_task_advances_sync_state(
     assert manager.mtime_calls == [
         {str(source_path): datetime.fromtimestamp(source_path.stat().st_mtime).isoformat()}
     ]
+    assert manager.inode_calls == [{str(source_path): source_path.stat().st_ino}]
 
 
 def test_failed_folder_task_does_not_advance_sync_state(

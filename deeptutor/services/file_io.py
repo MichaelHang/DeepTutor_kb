@@ -6,6 +6,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import shutil
 import tempfile
 import threading
 import time
@@ -130,4 +131,59 @@ def atomic_write_text(path: Path, text: str) -> None:
             temporary_path.unlink(missing_ok=True)
 
 
-__all__ = ["atomic_write_json", "atomic_write_text", "read_text"]
+def is_hardlinked(path: Path) -> bool:
+    """True when *path* shares its inode with another name on disk.
+
+    A hard link is a second directory entry for the same bytes, so such a file
+    is not an independent copy: writing through it would rewrite the file it
+    was linked from. ``st_nlink`` counts the directory entries for the inode,
+    which is exactly what tells the two apart.
+    """
+    try:
+        return path.stat().st_nlink > 1
+    except OSError:
+        return False
+
+
+def detach_if_hardlinked(path: Path) -> bool:
+    """Drop *path*'s directory entry when it is a hard link.
+
+    Replacing the entry — rather than the bytes behind it — breaks the link
+    without touching the file it came from, so whatever is written next lands
+    in a new, independent file instead of overwriting the original. Returns
+    True when an entry was removed.
+    """
+    if not is_hardlinked(path):
+        return False
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return False
+    return True
+
+
+def link_or_copy(source: Path, dest: Path) -> bool:
+    """Put *source* at *dest*, sharing the bytes when the filesystem allows it.
+
+    A hard link keeps a single copy of the data on disk, so a document staged
+    from a linked folder stays in step with the original instead of drifting
+    away from it. Hard links cannot cross a filesystem boundary, and some
+    volumes refuse them outright, so a plain copy is made whenever the link is
+    rejected. Returns True when the two names ended up sharing one inode.
+    """
+    try:
+        os.link(source, dest)
+        return True
+    except OSError:
+        shutil.copy2(source, dest)
+        return False
+
+
+__all__ = [
+    "atomic_write_json",
+    "atomic_write_text",
+    "detach_if_hardlinked",
+    "is_hardlinked",
+    "link_or_copy",
+    "read_text",
+]

@@ -159,6 +159,10 @@ class KnowledgeBaseInitializer:
         ``full.md`` per volume wants the same path over and over. Each document
         is kept under a distinct name instead of overwriting the one before it
         (#2041) — the same rule the incremental add path already followed.
+
+        The documents are staged as hard links where the filesystem allows one,
+        so the knowledge base holds a second name for the same bytes instead
+        of a second copy of them.
         """
         copied_files: list[str] = []
         staged: set[Path] = set()
@@ -167,7 +171,11 @@ class KnowledgeBaseInitializer:
             if not source_path.exists() or not source_path.is_file():
                 logger.warning(f"Source file not found: {source}")
                 continue
-            staged_path, copied = stage_source(source_path, self.raw_dir / source_path.name)
+            staged_path, copied = stage_source(
+                source_path,
+                self.raw_dir / source_path.name,
+                prefer_hardlink=True,
+            )
             if staged_path in staged:
                 continue
             staged.add(staged_path)

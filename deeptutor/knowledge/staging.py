@@ -7,6 +7,13 @@ documents that share a name want the same path. Only one place should answer
 what happens then, or the two entry points drift apart: the incremental path
 kept both files while the create path copied straight onto the taken name and
 indexed only the last one, silently losing the rest (#2041).
+
+A document that comes from a *linked folder* is staged as a hard link rather
+than a copy: the bytes are stored once, and the copy inside the knowledge base
+follows the file the user actually edits. The link is a second name for the
+same inode, so anything that rewrites the staged file must replace the name
+instead of writing through it — see :func:`deeptutor.services.file_io.
+detach_if_hardlinked`.
 """
 
 from __future__ import annotations
@@ -15,6 +22,8 @@ import hashlib
 import itertools
 from pathlib import Path
 import shutil
+
+from deeptutor.services.file_io import link_or_copy
 
 
 def content_hash(file_path: Path) -> str:
@@ -48,13 +57,21 @@ def stage_source(
     dest_path: Path,
     *,
     source_hash: str | None = None,
+    prefer_hardlink: bool = False,
 ) -> tuple[Path, bool]:
-    """Copy *source_path* to *dest_path* without replacing a different document.
+    """Put *source_path* at *dest_path* without replacing a different document.
 
-    Returns the path the document actually landed on, and whether a copy was
-    made. A name already holding the *same* content is reused rather than
+    Returns the path the document actually landed on, and whether it was
+    written. A name already holding the *same* content is reused rather than
     written twice; a name holding a different document is left alone and the
     newcomer takes a free sibling name, so both get indexed.
+
+    With ``prefer_hardlink`` the document is staged as a hard link to the
+    source when the filesystem allows one, so the knowledge base holds a
+    second name for the same bytes instead of a second copy of them. The
+    staged file then follows the original as the user edits it in place. A
+    filesystem that cannot link across the boundary falls back to a copy, so
+    the result is always a readable file either way.
     """
     staged = dest_path
     if staged.exists():
@@ -66,7 +83,10 @@ def stage_source(
             if not staged.exists():
                 break
     staged.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(source_path, staged)
+    if prefer_hardlink:
+        link_or_copy(source_path, staged)
+    else:
+        shutil.copy2(source_path, staged)
     return staged, True
 
 

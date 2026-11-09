@@ -71,7 +71,7 @@ from deeptutor.multi_user.knowledge_access import (
     list_visible_knowledge_bases as list_visible_kb_access,
 )
 from deeptutor.services.config import PROJECT_ROOT, load_config_with_main
-from deeptutor.services.file_io import atomic_write_json
+from deeptutor.services.file_io import atomic_write_json, detach_if_hardlinked
 from deeptutor.services.rag.factory import (
     DEFAULT_PROVIDER,
     GRAPHRAG_PROVIDER,
@@ -504,6 +504,12 @@ def _save_uploaded_files(
                 file_path = dest_dir / sanitized_filename
                 max_size = DocumentValidator.MAX_FILE_SIZE
                 written_bytes = 0
+
+                # A document staged from a linked folder is a hard link to the
+                # user's original: writing through it would rewrite that
+                # original. Replacing the name instead leaves the user's file
+                # exactly as it was and gives the upload its own copy.
+                detach_if_hardlinked(file_path)
 
                 file.file.seek(0)
                 with open(file_path, "wb") as buffer:
@@ -1205,12 +1211,15 @@ async def run_upload_processing_task(
             # Snapshot before staging: changes made while indexing must still
             # appear as modified on the next linked-folder sync.
             source_mtimes = {}
+            source_inodes = {}
             if folder_id:
                 for source_path in uploaded_file_paths:
                     try:
+                        source_stat = Path(source_path).stat()
                         source_mtimes[source_path] = datetime.fromtimestamp(
-                            Path(source_path).stat().st_mtime
+                            source_stat.st_mtime
                         ).isoformat()
+                        source_inodes[source_path] = source_stat.st_ino
                     except OSError:
                         pass
             _task_log(task_id, f"Processing {len(uploaded_file_paths)} file(s) for KB '{kb_name}'")
@@ -1256,7 +1265,7 @@ async def run_upload_processing_task(
                     try:
                         manager = get_kb_manager()
                         manager.update_folder_sync_state(
-                            kb_name, folder_id, uploaded_file_paths, source_mtimes
+                            kb_name, folder_id, uploaded_file_paths, source_mtimes, source_inodes
                         )
                         _task_log(task_id, f"Updated folder sync state: {folder_id}")
                     except Exception as sync_err:
@@ -1334,7 +1343,7 @@ async def run_upload_processing_task(
                     # source paths, so persist the complete successful input
                     # batch instead of the internal staging paths.
                     manager.update_folder_sync_state(
-                        kb_name, folder_id, uploaded_file_paths, source_mtimes
+                        kb_name, folder_id, uploaded_file_paths, source_mtimes, source_inodes
                     )
                     _task_log(task_id, f"Updated folder sync state: {folder_id}")
                 except Exception as sync_err:

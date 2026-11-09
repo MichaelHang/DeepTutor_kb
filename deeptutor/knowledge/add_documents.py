@@ -9,12 +9,13 @@ from dataclasses import dataclass
 from datetime import datetime
 import json
 import logging
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional
 
 from deeptutor.knowledge.staging import content_hash, stage_source
 from deeptutor.services.config import resolve_llm_runtime_config
-from deeptutor.services.file_io import atomic_write_json
+from deeptutor.services.file_io import atomic_write_json, is_hardlinked
 from deeptutor.services.rag.factory import (
     DEFAULT_PROVIDER,
     LIGHTRAG_PROVIDER,
@@ -35,6 +36,11 @@ from deeptutor.utils.file_types import FileTypeRouter
 logger = logging.getLogger(__name__)
 
 DEFAULT_BASE_DIR = "./data/knowledge_bases"
+
+# LightRAG freezes every document into an immutable bundle and refuses a
+# source that shares its inode with another name, so its documents have to
+# stay ordinary copies.
+HARDLINK_UNSAFE_PROVIDERS = frozenset({LIGHTRAG_PROVIDER})
 
 if TYPE_CHECKING:
     from deeptutor.knowledge.manager import KnowledgeBaseManager
@@ -347,6 +353,112 @@ def remove_raw_documents(kb_dir: Path, file_paths: list[Path]) -> list[RawDocume
     return removals
 
 
+def linked_source_inodes(kb_dir: Path, source_root: Path) -> dict[str, int]:
+    """The inode each source file had at the last sync of its linked folder.
+
+    An editor that saves through a temporary file replaces the original with
+    a new inode, which leaves the knowledge base's link on the previous
+    version. The recorded inode tells that case apart from a file the user
+    uploaded under the same name: an upload leaves the source exactly as it
+    was, so its inode still matches.
+    """
+    metadata = _read_metadata(kb_dir / "metadata.json")
+    for folder in metadata.get("linked_folders") or []:
+        if not isinstance(folder, dict):
+            continue
+        try:
+            folder_path = Path(str(folder.get("path") or "")).expanduser().resolve()
+        except OSError:
+            continue
+        if folder_path != source_root:
+            continue
+        inodes = folder.get("synced_inodes")
+        if isinstance(inodes, dict):
+            try:
+                return {str(key): int(value) for key, value in inodes.items()}
+            except (TypeError, ValueError):
+                return {}
+    return {}
+
+
+def drop_stale_staged_link(
+    source_path: Path,
+    dest_path: Path,
+    source_inodes: dict[str, int],
+) -> bool:
+    """Remove a staged link that points at a version of the source that is gone.
+
+    The source was replaced by a new file — what an editor does when it saves
+    through a temporary file — so the staged copy points at a version the
+    user no longer has. Dropping it lets the current version be staged in
+    its place instead of piling up beside the old one.
+
+    The staged copy is only dropped when it still is the link made at the
+    last sync. A file the user uploaded under the same name has its own
+    inode and is theirs to keep. Returns True when the stale copy was
+    removed.
+    """
+    recorded = source_inodes.get(str(source_path))
+    if recorded is None:
+        return False
+    if not dest_path.is_file():
+        return False
+    try:
+        dest_inode = dest_path.stat().st_ino
+        current_inode = source_path.stat().st_ino
+    except OSError:
+        return False
+    if current_inode == recorded:
+        # The source itself is unchanged, so the staged copy already shows
+        # its content — nothing to replace.
+        return False
+    if dest_inode != recorded:
+        # Not the link made at the last sync, so it is not a stale version
+        # of the source.
+        return False
+    try:
+        dest_path.unlink()
+    except OSError:
+        return False
+    return True
+
+
+def relink_staged_copy(source_path: Path, raw_dir: Path, source_root: Path) -> bool:
+    """Replace a staged copy of *source_path* with a hard link to it.
+
+    A knowledge base synced before hard links were used holds an independent
+    copy of every linked-folder document, so it keeps a second set of bytes on
+    disk and stops following the file the user edits. Swapping the copy for a
+    link to the original changes only how the bytes are stored — the content,
+    and therefore the index built from it, stays valid.
+
+    The swap goes through a temporary link and an atomic rename, so the
+    knowledge base never sees a half-written file and the user's original is
+    never written to. Returns True when a copy was replaced.
+    """
+    try:
+        relative = source_path.resolve().relative_to(source_root.resolve())
+    except (OSError, ValueError):
+        return False
+
+    dest = raw_dir / relative
+    if not dest.is_file() or is_hardlinked(dest):
+        return False
+
+    temporary = dest.with_name(f".{dest.name}.relink")
+    try:
+        os.link(source_path, temporary)
+    except OSError:
+        # A link cannot cross a filesystem boundary; the copy stays as it is.
+        return False
+    try:
+        os.replace(temporary, dest)
+    except OSError:
+        temporary.unlink(missing_ok=True)
+        return False
+    return True
+
+
 class DocumentAdder:
     """Stage and index new files through a KB's bound RAG provider."""
 
@@ -465,12 +577,25 @@ class DocumentAdder:
         its bare filename: without this, every externally-sourced subfolder
         collapses into raw/'s top level and same-named files in different
         subfolders collide.
+
+        Files under that root are staged as hard links, so the knowledge base
+        keeps a second name for the same bytes rather than a second copy of
+        them, and the staged document follows the original when the user edits
+        it in place. Sources from anywhere else are copied: their path in
+        ``raw/`` is not owned by the linked folder, and a link there would
+        tie an unrelated name to someone else's file.
         """
         logger.info(f"Validating documents for '{self.kb_name}'...")
 
         ingested_hashes = self.get_ingested_hashes()
         files_to_process: list[Path] = []
         resolved_source_root = Path(source_root).resolve() if source_root else None
+        hardlink_allowed = self.rag_provider not in HARDLINK_UNSAFE_PROVIDERS
+        source_inodes = (
+            linked_source_inodes(self.kb_dir, resolved_source_root)
+            if resolved_source_root is not None
+            else {}
+        )
 
         for source in source_files:
             source_path = Path(source)
@@ -479,11 +604,16 @@ class DocumentAdder:
                 continue
 
             current_hash = self._get_file_hash(source_path)
+            resolved_source = source_path.resolve()
             if current_hash in ingested_hashes.values() and not allow_duplicates:
+                # Already indexed, so there is nothing to re-read. A linked
+                # folder's document may still sit in raw/ as the copy it was
+                # before hard links existed: turn it into a link to the
+                # original, which costs nothing and needs no re-index.
+                if resolved_source_root is not None and hardlink_allowed:
+                    relink_staged_copy(source_path, self.raw_dir, resolved_source_root)
                 logger.info(f"Skipped (content already indexed): {source_path.name}")
                 continue
-
-            resolved_source = source_path.resolve()
 
             # Files already saved under raw/ (e.g. by the upload route, possibly
             # inside a folder) are indexed in place — never flattened to the
@@ -494,10 +624,23 @@ class DocumentAdder:
 
             if resolved_source_root and resolved_source.is_relative_to(resolved_source_root):
                 dest_path = self.raw_dir / resolved_source.relative_to(resolved_source_root)
+                from_linked_root = True
             else:
                 dest_path = self.raw_dir / source_path.name
+                from_linked_root = False
 
-            staged_path, copied = stage_source(source_path, dest_path, source_hash=current_hash)
+            if from_linked_root and hardlink_allowed:
+                # The source may have been replaced rather than edited, in
+                # which case the staged copy is a version the user no longer
+                # has. Clear it so the current version takes its place.
+                drop_stale_staged_link(source_path, dest_path, source_inodes)
+
+            staged_path, copied = stage_source(
+                source_path,
+                dest_path,
+                source_hash=current_hash,
+                prefer_hardlink=from_linked_root and hardlink_allowed,
+            )
             if copied:
                 logger.info(f"Staged to raw: {staged_path.relative_to(self.raw_dir).as_posix()}")
             else:

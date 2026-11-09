@@ -2210,6 +2210,7 @@ class KnowledgeBaseManager:
         folder_id: str,
         synced_files: list[str],
         source_mtimes: dict[str, str] | None = None,
+        source_inodes: dict[str, int] | None = None,
     ):
         """
         Update the sync state for a linked folder after successful sync.
@@ -2222,6 +2223,10 @@ class KnowledgeBaseManager:
             folder_id: Folder ID
             synced_files: List of file paths that were successfully synced
             source_mtimes: Modification times captured before source staging.
+            source_inodes: Inodes captured before source staging. An editor
+                that saves through a temporary file replaces the original with
+                a new inode, so the recorded one tells the next sync whether
+                the source was replaced or merely left alone.
         """
         if kb_name not in self.list_knowledge_bases():
             raise ValueError(f"Knowledge base not found: {kb_name}")
@@ -2268,6 +2273,15 @@ class KnowledgeBaseManager:
 
                 folder["synced_files"] = file_states
                 folder["file_count"] = len(file_states)
+
+                if source_inodes:
+                    inode_states = folder.get("synced_inodes")
+                    if not isinstance(inode_states, dict):
+                        inode_states = {}
+                    for file_path, inode in source_inodes.items():
+                        inode_states[file_path] = inode
+                    folder["synced_inodes"] = inode_states
+
                 atomic_write_json(metadata_file, metadata)
                 break
 
