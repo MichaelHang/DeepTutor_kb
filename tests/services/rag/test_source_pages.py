@@ -1,5 +1,6 @@
 """Regression tests for MinerU content_list text that PDF indexing keeps."""
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -165,3 +166,42 @@ def test_reference_list_without_page_index_is_still_indexed(tmp_path: Path) -> N
     assert unlocated == ["[9] Devlin et al. BERT. 2019."]
     assert all("4" != doc.text.strip() for doc in documents)
     assert not any(doc.text.strip().isdigit() for doc in documents)
+
+
+def test_remove_page_catalog_sources_drops_the_pages_of_a_removed_document(
+    tmp_path: Path,
+) -> None:
+    """A document that left the knowledge base must not keep its pages listed."""
+    from deeptutor.services.rag.source_pages import (
+        CATALOG_FILENAME,
+        persist_page_catalog,
+        remove_page_catalog_sources,
+    )
+
+    storage_dir = tmp_path / "kb" / "version-1"
+    storage_dir.mkdir(parents=True)
+    pages = []
+    for key in ("kept.pdf", "gone.pdf"):
+        for page_index in range(2):
+            pages.append(
+                {
+                    "document_key": key,
+                    "file_name": key,
+                    "page_index": page_index,
+                    "page": page_index + 1,
+                    "source_schema_version": 1,
+                }
+            )
+    target = storage_dir / CATALOG_FILENAME
+    target.write_text(
+        json.dumps({"schema_version": 1, "pages": pages}, ensure_ascii=False), encoding="utf-8"
+    )
+
+    removed = remove_page_catalog_sources(storage_dir, {"gone.pdf"})
+
+    assert removed == 2
+    kept = json.loads(target.read_text(encoding="utf-8"))["pages"]
+    assert {page["document_key"] for page in kept} == {"kept.pdf"}
+    # Nothing is removed twice.
+    assert remove_page_catalog_sources(storage_dir, {"gone.pdf"}) == 0
+    assert remove_page_catalog_sources(storage_dir, set()) == 0

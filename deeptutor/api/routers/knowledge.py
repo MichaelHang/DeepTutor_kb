@@ -1183,6 +1183,7 @@ async def run_upload_processing_task(
     owner=None,
     accepted_indexing_snapshot=None,
     storage_workspace_id: str | None = None,
+    removed_document_keys: set[str] | None = None,
 ):
     """Background task for processing uploaded files.
 
@@ -1209,6 +1210,7 @@ async def run_upload_processing_task(
                 folder_root=folder_root,
                 accepted_indexing_snapshot=accepted_indexing_snapshot,
                 storage_workspace_id=storage_workspace_id,
+                removed_document_keys=removed_document_keys,
             )
         finally:
             reset_current_user(token)
@@ -1229,6 +1231,7 @@ async def run_upload_processing_task(
                     folder_id=folder_id,
                     folder_root=folder_root,
                     accepted_indexing_snapshot=accepted_indexing_snapshot,
+                    removed_document_keys=removed_document_keys,
                 )
             finally:
                 library_request.reset(token)
@@ -1294,7 +1297,7 @@ async def run_upload_processing_task(
                 total=len(staged_files),
             )
 
-            if not staged_files:
+            if not staged_files and not removed_document_keys:
                 _task_log(task_id, "No new files to process (all duplicates or invalid)")
                 if folder_id:
                     try:
@@ -1321,7 +1324,9 @@ async def run_upload_processing_task(
                 )
                 return
 
-            index_result = await adder.process_new_documents(staged_files)
+            index_result = await adder.process_new_documents(
+                staged_files, removed_document_keys=removed_document_keys
+            )
             _task_log(task_id, f"Indexed {index_result.processed_count} file(s)")
 
             if index_result.has_failures:
@@ -5053,14 +5058,56 @@ async def sync_folder(kb_name: str, folder_id: str, background_tasks: Background
 
         if deleted_sources:
             # A document the user removed from the folder must stop answering
-            # questions: its copy leaves the knowledge base, and the index is
-            # rebuilt so its vectors go with it.
+            # questions: its copy leaves the knowledge base, and it is dropped
+            # from the published index.
             removal = manager.remove_folder_documents(kb_name, folder_id, deleted_sources)
             logger.info(
                 "Removed %s document(s) of '%s' that are gone from the folder",
                 removal["removed_count"],
                 folder_path,
             )
+            removed_keys = set(removal["removed_files"])
+            if kb_provider == DEFAULT_PROVIDER:
+                # LlamaIndex drops the removed documents from the published
+                # index and keeps the vectors of the ones that stay, so the
+                # removal costs no embedding at all.
+                task_id = _build_unique_task_id("kb_upload", f"{kb_name}_folder_{folder_id}")
+                get_task_stream_manager().ensure_task(task_id)
+                _mark_kb_queued_for_processing(
+                    manager,
+                    kb_name,
+                    task_id,
+                    f"Syncing {len(files_to_process)} file(s) from linked folder...",
+                )
+                accepted_snapshot = _freeze_append_indexing(kb_name, kb_base_dir, kb_provider)
+                background_tasks.add_task(
+                    run_upload_processing_task,
+                    accepted_indexing_snapshot=accepted_snapshot,
+                    kb_name=kb_name,
+                    base_dir=str(kb_base_dir),
+                    uploaded_file_paths=files_to_process,
+                    task_id=task_id,
+                    rag_provider=kb_provider,
+                    folder_id=folder_id,
+                    folder_root=folder_path,
+                    removed_document_keys=removed_keys,
+                    owner=get_current_user(),
+                    storage_workspace_id=workspace_id_for_kb_base_dir(kb_base_dir),
+                )
+                return SyncFolderResponse(
+                    message="Removed documents that are gone from the linked folder",
+                    folder_path=folder_path,
+                    files=[],
+                    new_files=len(changes["new_files"]),
+                    modified_files=len(changes["modified_files"]),
+                    file_count=folder_info.get("file_count", 0),
+                    task_id=task_id,
+                    removed_files=removal["removed_files"],
+                    reindex_task_id=task_id,
+                    reindex_error=None,
+                )
+            # Other engines build their index as a whole, so the removal is
+            # followed by a rebuild.
             if files_to_process:
                 # New and changed documents join the rebuild, so the knowledge
                 # base ends up in step with the folder in one go.

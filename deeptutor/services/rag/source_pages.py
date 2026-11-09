@@ -262,6 +262,35 @@ def persist_page_catalog(documents: list[Any], storage_dir: Path) -> None:
     temp.replace(target)
 
 
+def remove_page_catalog_sources(storage_dir: Path, document_keys: set[str]) -> int:
+    """Drop the page entries of documents that left the knowledge base.
+
+    The page catalog is a sidecar of the index: a document that is no longer
+    part of the knowledge base must not keep its pages listed, or the reader
+    would offer pages the index no longer holds. Returns the number of pages
+    that were dropped.
+    """
+    if not document_keys:
+        return 0
+    target = Path(storage_dir) / CATALOG_FILENAME
+    if not target.exists():
+        return 0
+    try:
+        payload = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return 0
+    pages = payload.get("pages", [])
+    kept = [page for page in pages if page.get("document_key") not in document_keys]
+    removed = len(pages) - len(kept)
+    if not removed:
+        return 0
+    payload["pages"] = kept
+    temp = target.with_suffix(".tmp")
+    temp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    temp.replace(target)
+    return removed
+
+
 def legacy_page_index(
     kb_dir: Path, storage_dir: Path, document_keys: list[str] | None, *, build: bool = False
 ) -> Path:

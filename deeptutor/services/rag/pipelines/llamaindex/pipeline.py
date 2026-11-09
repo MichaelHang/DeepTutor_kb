@@ -492,6 +492,7 @@ class LlamaIndexPipeline:
     async def add_documents(self, kb_name: str, file_paths: List[str], **kwargs) -> bool:
         progress_callback = kwargs.get("progress_callback")
         image_progress_callback = kwargs.get("image_progress_callback")
+        removed_document_keys = set(kwargs.get("removed_document_keys") or ())
         kb_dir = resolve_kb_dir(self.kb_base_dir, kb_name)
         _ensure_index_worker_available(str(kb_dir.resolve()))
         await self._configure_settings_async()
@@ -511,23 +512,47 @@ class LlamaIndexPipeline:
                 kb_dir=kb_dir,
                 visual_candidates=visual_candidates,
             )
-            if not documents:
+            if not documents and not removed_document_keys:
                 self.logger.warning("No valid documents to add")
                 return False
 
             VisualAssetStore(kb_dir).publish(visual_candidates)
             if plan.existing_storage is not None:
                 self.logger.info(f"Loading existing index from {plan.existing_storage}...")
-                num_added = await _run_with_stall_guard(
-                    lambda: storage.insert_documents(
-                        plan.existing_storage, plan.storage_dir, documents
-                    ),
-                    progress_callback=progress_callback,
-                    worker_key=str(kb_dir.resolve()),
-                )
-                self.logger.info(f"Added {num_added} documents to existing index")
+                if removed_document_keys:
+                    # The documents that left the knowledge base are dropped
+                    # from the existing index, and the peers keep the vectors
+                    # they already have: only the new documents are embedded.
+                    prune_result = await _run_with_stall_guard(
+                        lambda: storage.insert_documents_pruned(
+                            plan.existing_storage,
+                            plan.storage_dir,
+                            documents,
+                            removed_document_keys,
+                        ),
+                        progress_callback=progress_callback,
+                        worker_key=str(kb_dir.resolve()),
+                    )
+                    self.logger.info(
+                        f"Pruned {prune_result.removed_nodes} node(s) of "
+                        f"{prune_result.removed_documents} removed document(s) and added "
+                        f"{prune_result.added_documents} document(s) to existing index"
+                    )
+                else:
+                    num_added = await _run_with_stall_guard(
+                        lambda: storage.insert_documents(
+                            plan.existing_storage, plan.storage_dir, documents
+                        ),
+                        progress_callback=progress_callback,
+                        worker_key=str(kb_dir.resolve()),
+                    )
+                    self.logger.info(f"Added {num_added} documents to existing index")
 
             else:
+                if not documents:
+                    # There is no index to prune and nothing to index.
+                    self.logger.warning("No published index to update")
+                    return False
                 self.logger.info(f"Creating new index with {len(documents)} documents...")
                 plan.storage_dir.mkdir(parents=True, exist_ok=True)
                 num_added = await _run_with_stall_guard(

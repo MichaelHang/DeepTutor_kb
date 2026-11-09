@@ -668,9 +668,21 @@ class DocumentAdder:
 
         return files_to_process
 
-    async def process_new_documents(self, new_files: List[Path]) -> DocumentIndexResult:
-        """Index staged files via the KB's bound provider."""
-        if not new_files:
+    async def process_new_documents(
+        self,
+        new_files: List[Path],
+        *,
+        removed_document_keys: set[str] | None = None,
+    ) -> DocumentIndexResult:
+        """Index staged files via the KB's bound provider.
+
+        ``removed_document_keys`` names the documents that left the knowledge
+        base. LlamaIndex drops them from the published index while the
+        documents that stay keep the vectors they already have, so a removal
+        costs no embedding at all.
+        """
+        removed = set(removed_document_keys or ())
+        if not new_files and not removed:
             return DocumentIndexResult(processed_files=[], failures=[])
 
         if self.rag_provider == LIGHTRAG_PROVIDER:
@@ -680,11 +692,13 @@ class DocumentAdder:
         # instead of one version per file (#2173). A single file stays on the
         # per-file path, and a batch that throws falls back there so one bad
         # file does not discard the others.
-        if self.rag_provider == DEFAULT_PROVIDER and len(new_files) > 1:
-            return await self._process_llamaindex_batch(new_files)
+        if self.rag_provider == DEFAULT_PROVIDER and (len(new_files) > 1 or removed):
+            return await self._process_llamaindex_batch(new_files, removed)
         return await self._process_provider_files_one_by_one(new_files)
 
-    async def _process_llamaindex_batch(self, new_files: List[Path]) -> DocumentIndexResult:
+    async def _process_llamaindex_batch(
+        self, new_files: List[Path], removed_document_keys: set[str] | None = None
+    ) -> DocumentIndexResult:
         """Index every staged file in one LlamaIndex publish."""
         requested = {str(path.resolve()): path for path in new_files}
         confirmed: list[Path] = []
@@ -722,6 +736,7 @@ class DocumentAdder:
                 self.kb_name,
                 [str(path) for path in new_files],
                 indexed_file_callback=on_indexed,
+                removed_document_keys=set(removed_document_keys or ()),
             )
         except PermissionError as exc:
             logger.exception("Permission denied while indexing a LlamaIndex batch: %s", exc)
@@ -734,7 +749,13 @@ class DocumentAdder:
                 total_files,
                 exc,
             )
-            return await self._process_provider_files_one_by_one(new_files)
+            if removed_document_keys and not new_files:
+                # The per-file fallback publishes nothing without a file, so
+                # the removal would be dropped without a trace.
+                raise
+            return await self._process_provider_files_one_by_one(
+                new_files, removed_document_keys=removed_document_keys
+            )
 
         if not success:
             return DocumentIndexResult(
@@ -775,17 +796,23 @@ class DocumentAdder:
         return DocumentIndexResult(processed_files=recorded, failures=failures)
 
     async def _process_provider_files_one_by_one(
-        self, new_files: List[Path]
+        self, new_files: List[Path], removed_document_keys: set[str] | None = None
     ) -> DocumentIndexResult:
         """Index each staged file with its own provider call.
 
         PageIndex and GraphRAG stay on this path. LlamaIndex uses it for a
         single file, and as the fallback when a multi-file publish throws.
+
+        ``removed_document_keys`` is applied with the first publish, so a
+        fallback still drops the documents that left the knowledge base.
         """
         rag_service = RAGService(kb_base_dir=str(self.base_dir), provider=self.rag_provider)
         processed_files: list[Path] = []
         failures: list[DocumentIndexFailure] = []
         total_files = len(new_files)
+        pending_removals = (
+            set(removed_document_keys or ()) if self.rag_provider == DEFAULT_PROVIDER else set()
+        )
 
         for doc_file in new_files:
             try:
@@ -800,7 +827,12 @@ class DocumentAdder:
                         total=total_files,
                     )
 
-                success = await rag_service.add_documents(self.kb_name, [str(doc_file)])
+                success = await rag_service.add_documents(
+                    self.kb_name,
+                    [str(doc_file)],
+                    **({"removed_document_keys": pending_removals} if pending_removals else {}),
+                )
+                pending_removals = set()
                 if success:
                     processed_files.append(doc_file)
                     # Re-hashes the whole file, so it stays off the event loop:

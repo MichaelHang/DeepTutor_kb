@@ -517,7 +517,7 @@ async def test_upload_to_moved_kb_background_task_uses_its_storage_scope(as_user
             def add_documents(self, paths, **_kwargs):
                 return paths
 
-            async def process_new_documents(self, paths):
+            async def process_new_documents(self, paths, **_kwargs):
                 return SimpleNamespace(processed_count=len(paths), has_failures=False)
 
             def update_metadata(self, _count):

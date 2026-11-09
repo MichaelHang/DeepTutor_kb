@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import shutil
 import tempfile
 import threading
@@ -419,6 +419,230 @@ def insert_documents(existing_storage: Path, storage_dir: Path, documents: list[
         shutil.copy2(existing_storage / "source_pages.json", storage_dir / "source_pages.json")
     persist_page_catalog(documents, storage_dir)
     return count
+
+
+class PruningUnsupportedError(RuntimeError):
+    """Raised when a vector backend cannot drop documents without re-embedding."""
+
+
+@dataclass(frozen=True)
+class PrunedInsertResult:
+    """What a pruned publish changed in the index."""
+
+    removed_documents: int
+    removed_nodes: int
+    added_documents: int
+
+
+def _root_for_document_key(file_path: str, document_key: str) -> Path | None:
+    """The directory a document was indexed from.
+
+    The index stores the key of a document relative to the knowledge base's
+    ``raw`` directory (``text/a.pdf``) and the absolute path of the same file
+    (``<kb>/raw/text/a.pdf``). The difference is the directory the document
+    came from.
+    """
+    path = Path(file_path)
+    parts = PurePosixPath(document_key).parts
+    if not parts or len(parts) > len(path.parts):
+        return None
+    if path.parts[-len(parts) :] != parts:
+        return None
+    return Path(*path.parts[: len(path.parts) - len(parts)])
+
+
+def _raw_roots(storage_dir: Path, nodes: dict[str, Any]) -> list[Path]:
+    """The ``raw`` directories the indexed files can live in.
+
+    The index does not record the directory its files were read from, so the
+    roots are derived from the nodes themselves and from the layout of the
+    knowledge base.
+    """
+    roots: list[Path] = []
+    for node in nodes.values():
+        metadata = getattr(node, "metadata", None) or {}
+        key = metadata.get("document_key")
+        file_path = metadata.get("file_path")
+        if not isinstance(key, str) or not isinstance(file_path, str):
+            continue
+        root = _root_for_document_key(file_path, key)
+        if root is not None and root not in roots:
+            roots.append(root)
+    for parent in storage_dir.parents:
+        candidate = parent / "raw"
+        if candidate.is_dir():
+            if candidate not in roots:
+                roots.append(candidate)
+            break
+    return roots
+
+
+def _nodes_of_documents(
+    nodes: dict[str, Any], document_keys: set[str], roots: list[Path]
+) -> set[str]:
+    """The node ids that belong to the documents that left the knowledge base.
+
+    A page node carries the key of its document, while a plain text node and a
+    visual node only carry the path of the file they were made from. Both are
+    matched, so every node of a removed document is found.
+    """
+    if not document_keys:
+        return set()
+    targets = {os.path.normpath(str(root / key)) for root in roots for key in document_keys}
+    victims: set[str] = set()
+    for node_id, node in nodes.items():
+        metadata = getattr(node, "metadata", None) or {}
+        if metadata.get("document_key") in document_keys:
+            victims.add(node_id)
+            continue
+        file_path = metadata.get("file_path")
+        if isinstance(file_path, str) and os.path.normpath(file_path) in targets:
+            victims.add(node_id)
+    return victims
+
+
+def _rebuild_faiss_index(faiss_index: Any, vectors: Any) -> Any:
+    """A new index of the same kind that holds the given vectors."""
+    import faiss
+
+    dimension = int(faiss_index.d)
+    name = type(faiss_index).__name__
+    if name == "IndexHNSWFlat":
+        neighbors = int(faiss_index.hnsw.nb_neighbors(0))
+        rebuilt = faiss.IndexHNSWFlat(dimension, max(1, neighbors // 2), faiss_index.metric_type)
+        rebuilt.hnsw.efConstruction = faiss_index.hnsw.efConstruction
+        rebuilt.hnsw.efSearch = faiss_index.hnsw.efSearch
+    elif name == "IndexFlatL2":
+        rebuilt = faiss.IndexFlatL2(dimension)
+    elif name == "IndexFlatIP":
+        rebuilt = faiss.IndexFlatIP(dimension)
+    else:
+        raise PruningUnsupportedError(
+            f"The '{name}' vector index cannot drop documents without re-embedding."
+        )
+    rebuilt.add(vectors)
+    return rebuilt
+
+
+def _prune_faiss_vectors(
+    store: Any, faiss_index: Any, removed_rows: list[int], kept_rows: list[int]
+) -> None:
+    """Drop the given rows from the FAISS index, keeping the order of the rest.
+
+    A flat index drops the rows in place. An index without that support (HNSW)
+    is rebuilt from the vectors that stay, which copies the vectors but does
+    not embed anything.
+    """
+    import numpy as np
+
+    try:
+        faiss_index.remove_ids(np.array(removed_rows, dtype="int64"))
+        return
+    except (RuntimeError, NotImplementedError):
+        pass
+    vectors = faiss_index.reconstruct_n(0, int(faiss_index.ntotal))
+    kept = vectors[np.array(kept_rows, dtype="int64")]
+    store._faiss_index = _rebuild_faiss_index(faiss_index, kept)
+
+
+def _prune_index(index: Any, victims: set[str]) -> int:
+    """Drop the given nodes from the index, keeping the vectors of the others.
+
+    A vector backend cannot drop a single vector, so the vectors that remain
+    are carried over as they are and only the mapping from a vector position
+    to its node is rebuilt. Nothing is embedded again.
+    """
+    if not victims:
+        return 0
+
+    index_struct = index.index_struct
+    nodes_dict = index_struct.nodes_dict
+    store = index.vector_store
+    faiss_index = getattr(store, "_faiss_index", None)
+
+    if faiss_index is not None:
+        rows = {int(vector_id): node_id for vector_id, node_id in nodes_dict.items()}
+        if set(rows) != set(range(int(faiss_index.ntotal))):
+            raise PruningUnsupportedError(
+                "The vector rows of the index do not match its index structure."
+            )
+        removed_rows = sorted(row for row, node_id in rows.items() if node_id in victims)
+        kept_rows = [row for row in sorted(rows) if rows[row] not in victims]
+        if removed_rows:
+            _prune_faiss_vectors(store, faiss_index, removed_rows, kept_rows)
+        # Dropping rows moves the vectors behind them forward, so every
+        # surviving node shifts to the position its vector now has.
+        index_struct.nodes_dict = {
+            str(position): rows[row] for position, row in enumerate(kept_rows)
+        }
+    else:
+        data = getattr(store, "data", None)
+        embedding_dict = getattr(data, "embedding_dict", None)
+        if not isinstance(embedding_dict, dict):
+            raise PruningUnsupportedError(
+                "This vector backend cannot drop documents from an index."
+            )
+        text_dict = getattr(data, "text_to_embedding_dict", None)
+        for node_id in victims:
+            embedding_dict.pop(node_id, None)
+            if isinstance(text_dict, dict):
+                text_dict.pop(node_id, None)
+        for vector_id, node_id in list(nodes_dict.items()):
+            if node_id in victims:
+                nodes_dict.pop(vector_id, None)
+
+    for node_id in victims:
+        index.docstore.delete_document(node_id, raise_error=False)
+
+    # The index structure is kept in the index store, which is what a persist
+    # writes out. The changed mapping has to be handed back to it.
+    index.storage_context.index_store.add_index_struct(index_struct)
+    return len(victims)
+
+
+def insert_documents_pruned(
+    existing_storage: Path,
+    storage_dir: Path,
+    documents: list[Any],
+    removed_document_keys: set[str],
+    *,
+    top_k: int = 20,
+) -> PrunedInsertResult:
+    """Publish a snapshot without the removed documents, without embedding again.
+
+    The vectors of the documents that stay are carried over as they are, so a
+    removal costs no embedding at all. Only the documents that are new or
+    changed are embedded, and they join the pruned snapshot.
+    """
+    index = vector_store.load_index(existing_storage)
+    nodes = index.docstore.docs
+    roots = _raw_roots(existing_storage, nodes)
+    victims = _nodes_of_documents(nodes, removed_document_keys, roots)
+    removed_nodes = _prune_index(index, victims)
+
+    if documents:
+        ingestion.insert_documents_into_index(index, documents)
+
+    Path(storage_dir).mkdir(parents=True, exist_ok=True)
+    index.storage_context.persist(persist_dir=str(storage_dir))
+    retrievers.persist_bm25_retriever(index, storage_dir, top_k=top_k)
+
+    from deeptutor.services.rag.source_pages import (
+        persist_page_catalog,
+        remove_page_catalog_sources,
+    )
+
+    catalog = Path(existing_storage) / "source_pages.json"
+    target = Path(storage_dir) / "source_pages.json"
+    if catalog.is_file():
+        shutil.copy2(catalog, target)
+        remove_page_catalog_sources(storage_dir, removed_document_keys)
+    persist_page_catalog(documents, storage_dir)
+    return PrunedInsertResult(
+        removed_documents=len(removed_document_keys),
+        removed_nodes=removed_nodes,
+        added_documents=len(documents),
+    )
 
 
 def _persisted_vector_fault(exc: ValueError) -> str:

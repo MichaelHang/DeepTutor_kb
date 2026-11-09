@@ -197,7 +197,7 @@ def test_noop_sync_records_success_and_returns_sync_contract(
 def test_sync_removes_documents_that_are_gone_from_the_folder(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """源目录里消失的文档要离开知识库，索引随之重建。"""
+    """源目录里消失的文档要离开知识库，索引随之更新。"""
     manager = _FolderManager(tmp_path)
     gone = str(tmp_path / "notes" / "gone.md")
     manager.detect_result = {
@@ -209,10 +209,17 @@ def test_sync_removes_documents_that_are_gone_from_the_folder(
     }
     _patch_manager(monkeypatch, manager)
 
-    async def _fake_purge(*_args, **_kwargs):
-        return "reindex-task", None
+    async def _noop_task(*_args, **kwargs):
+        recorded.update(kwargs)
+        return None
 
-    monkeypatch.setattr(knowledge_router_module, "_purge_unlinked_documents", _fake_purge)
+    recorded: dict = {}
+    monkeypatch.setattr(knowledge_router_module, "run_upload_processing_task", _noop_task)
+    monkeypatch.setattr(
+        knowledge_router_module,
+        "_build_unique_task_id",
+        lambda *_args: "sync-task",
+    )
 
     with TestClient(_build_app()) as client:
         response = client.post("/api/knowledge-bases/kb/sync-folder/folder-1")
@@ -220,9 +227,11 @@ def test_sync_removes_documents_that_are_gone_from_the_folder(
     assert response.status_code == 200
     body = response.json()
     assert body["removed_files"] == ["note.md"]
-    assert body["reindex_task_id"] == "reindex-task"
-    assert body["reindex_error"] is None
+    assert body["task_id"] == "sync-task"
     assert manager.removal_calls == [("kb", "folder-1", [gone])]
+    # The removed documents are named to the index, so it can drop them
+    # without embedding anything again.
+    assert recorded["removed_document_keys"] == {"note.md"}
 
 
 def test_queued_sync_returns_counts_and_task_id(
@@ -408,7 +417,7 @@ def test_completed_folder_task_records_source_paths(
         def add_documents(self, _paths, **_kwargs):
             return [staged_path]
 
-        async def process_new_documents(self, _staged):
+        async def process_new_documents(self, _staged, **_kwargs):
             return SimpleNamespace(
                 processed_files=[staged_path],
                 processed_count=1,
@@ -494,7 +503,7 @@ def test_failed_folder_task_does_not_advance_sync_state(
         def add_documents(self, _paths, **_kwargs):
             return [staged_path]
 
-        async def process_new_documents(self, _staged):
+        async def process_new_documents(self, _staged, **_kwargs):
             return SimpleNamespace(
                 processed_files=[],
                 processed_count=0,
@@ -547,7 +556,7 @@ def test_partially_failed_folder_task_syncs_the_files_that_worked(
         def add_documents(self, _paths, **_kwargs):
             return [staged_good, staged_bad]
 
-        async def process_new_documents(self, _staged):
+        async def process_new_documents(self, _staged, **_kwargs):
             return SimpleNamespace(
                 processed_files=[staged_good],
                 processed_count=1,

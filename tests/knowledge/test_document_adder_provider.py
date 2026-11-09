@@ -553,3 +553,74 @@ def test_non_llamaindex_provider_still_indexes_one_file_per_call(
 
     assert calls == [[str(files[0])], [str(files[1])]]
     assert result.processed_files == files
+
+
+def test_llamaindex_publishes_the_removed_documents_with_the_new_ones(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """The documents that left the knowledge base are named to the provider."""
+    adder, files = _llamaindex_adder(tmp_path, ["a.txt"])
+    recorded: list[dict] = []
+
+    class _RemovalService:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        async def add_documents(self, _kb_name, file_paths, **kwargs):
+            recorded.append(kwargs)
+            kwargs["indexed_file_callback"](file_paths)
+            return True
+
+    monkeypatch.setattr("deeptutor.knowledge.add_documents.RAGService", _RemovalService)
+
+    result = asyncio.run(adder.process_new_documents(files, removed_document_keys={"gone.txt"}))
+
+    assert result.processed_files == files
+    assert recorded[0]["removed_document_keys"] == {"gone.txt"}
+
+
+def test_llamaindex_publishes_a_removal_without_any_new_file(monkeypatch, tmp_path: Path) -> None:
+    """A removal on its own still reaches the provider."""
+    adder, _files = _llamaindex_adder(tmp_path, [])
+    recorded: list[dict] = []
+
+    class _RemovalService:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        async def add_documents(self, _kb_name, file_paths, **kwargs):
+            recorded.append(kwargs)
+            return True
+
+    monkeypatch.setattr("deeptutor.knowledge.add_documents.RAGService", _RemovalService)
+
+    result = asyncio.run(adder.process_new_documents([], removed_document_keys={"gone.txt"}))
+
+    assert result.processed_files == []
+    assert recorded[0]["removed_document_keys"] == {"gone.txt"}
+
+
+def test_llamaindex_removal_survives_the_per_file_fallback(monkeypatch, tmp_path: Path) -> None:
+    """A failing batch must not drop the removal on the way to the fallback."""
+    adder, files = _llamaindex_adder(tmp_path, ["a.txt", "b.txt"])
+    recorded: list[dict] = []
+
+    class _FallbackService:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        async def add_documents(self, _kb_name, file_paths, **kwargs):
+            recorded.append(kwargs)
+            if len(file_paths) > 1:
+                raise RuntimeError("batch exploded")
+            return True
+
+    monkeypatch.setattr("deeptutor.knowledge.add_documents.RAGService", _FallbackService)
+
+    result = asyncio.run(adder.process_new_documents(files, removed_document_keys={"gone.txt"}))
+
+    assert result.processed_files == files
+    # The removal travels with the first publish of the fallback.
+    assert recorded[0]["removed_document_keys"] == {"gone.txt"}
+    assert recorded[1]["removed_document_keys"] == {"gone.txt"}
+    assert "removed_document_keys" not in recorded[2]
