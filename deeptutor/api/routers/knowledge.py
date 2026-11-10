@@ -1172,6 +1172,33 @@ def _synced_source_paths(
     return [path for path in uploaded_file_paths if os.path.normpath(path) not in failed]
 
 
+def _clear_stale_kb_error(manager, kb_name: str, kb_base_dir: Path) -> None:
+    """Put a knowledge base that still shows an old failure back into ready state.
+
+    A document that could not be parsed leaves the knowledge base in an error
+    state. When that document is gone from the source folder and a scan finds
+    no work left, nothing is outstanding any more, so the base goes back to
+    ready instead of carrying the old failure for ever. A run that is still in
+    flight keeps its progress.
+    """
+    from deeptutor.knowledge.progress_tracker import ProgressStage, ProgressTracker
+
+    state = manager.get_kb_status(kb_name) or {}
+    if state.get("status") != "error":
+        return
+    progress = state.get("progress")
+    if isinstance(progress, dict) and progress.get("stage") not in {None, "error"}:
+        return
+
+    tracker = ProgressTracker(kb_name, Path(kb_base_dir))
+    tracker.update(
+        ProgressStage.COMPLETED,
+        message_key="No new files to process (all duplicates or invalid)",
+        current=0,
+        total=0,
+    )
+
+
 async def run_upload_processing_task(
     kb_name: str,
     base_dir: str,
@@ -5144,6 +5171,10 @@ async def sync_folder(kb_name: str, folder_id: str, background_tasks: Background
             # Persisting this timestamp makes the UI's "last successful sync"
             # truthful for empty and already-current folders as well.
             manager.update_folder_sync_state(kb_name, folder_id, [])
+            # A failure from an earlier run (a document that could not be
+            # parsed, say) must not keep the base in an error state for ever:
+            # the scan just proved that nothing is left to do.
+            _clear_stale_kb_error(manager, kb_name, kb_base_dir)
             return SyncFolderResponse(
                 message="No new or modified files to sync",
                 folder_path=folder_path,

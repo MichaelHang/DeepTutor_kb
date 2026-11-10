@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -122,6 +123,16 @@ class _FolderManager:
         self.config["knowledge_bases"][name]["status"] = status
         self.config["knowledge_bases"][name]["progress"] = progress or {}
 
+    def get_kb_status(self, name: str) -> dict | None:
+        entry = self.config["knowledge_bases"].get(name)
+        if not entry:
+            return None
+        return {
+            "status": entry.get("status", "unknown"),
+            "progress": entry.get("progress"),
+            "updated_at": entry.get("updated_at"),
+        }
+
 
 def _build_app() -> FastAPI:
     if FastAPI is None or router is None:  # pragma: no cover - guarded by pytestmark
@@ -192,6 +203,56 @@ def test_noop_sync_records_success_and_returns_sync_contract(
         "reindex_error": None,
     }
     assert manager.update_calls == [("kb", "folder-1", [])]
+
+
+def test_sync_clears_a_stale_error_when_the_scan_finds_no_work(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """扫描发现无事可做时，旧一次失败留下的错误状态要清掉。"""
+    stale_error = "26年寒高二地理第5节课笔记解析.docx: Provider returned failure without details."
+    manager = _FolderManager(tmp_path)
+    manager.config["knowledge_bases"]["kb"]["status"] = "error"
+    manager.config["knowledge_bases"]["kb"]["progress"] = {"stage": "error", "error": stale_error}
+    manager.config["knowledge_bases"]["kb"]["last_error"] = stale_error
+    manager.config["knowledge_bases"]["kb"]["last_error_at"] = "2026-11-09T22:15:46.884898"
+    (tmp_path / "kb_config.json").write_text(
+        json.dumps(manager.config, ensure_ascii=False), encoding="utf-8"
+    )
+    _patch_manager(monkeypatch, manager)
+
+    with TestClient(_build_app()) as client:
+        response = client.post("/api/knowledge-bases/kb/sync-folder/folder-1")
+
+    assert response.status_code == 200
+    stored = json.loads((tmp_path / "kb_config.json").read_text(encoding="utf-8"))
+    entry = stored["knowledge_bases"]["kb"]
+    assert entry["status"] == "ready"
+    assert "last_error" not in entry
+    assert "last_error_at" not in entry
+    assert "progress" not in entry
+
+
+def test_sync_replaces_an_old_error_with_the_run_it_starts(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """还有文件要处理时，新的一次运行接手，旧错误不再挂着。"""
+    manager = _FolderManager(tmp_path)
+    manager.config["knowledge_bases"]["kb"]["status"] = "error"
+    manager.config["knowledge_bases"]["kb"]["progress"] = {"stage": "error", "error": "boom"}
+    manager.detect_result = {
+        "new_files": [str(tmp_path / "notes" / "a.md")],
+        "modified_files": [],
+        "new_count": 1,
+        "modified_count": 0,
+    }
+    _patch_manager(monkeypatch, manager)
+
+    with TestClient(_build_app()) as client:
+        response = client.post("/api/knowledge-bases/kb/sync-folder/folder-1")
+
+    assert response.status_code == 200
+    # The run that was just queued takes over from the old failure.
+    assert manager.config["knowledge_bases"]["kb"]["status"] == "processing"
 
 
 def test_sync_removes_documents_that_are_gone_from_the_folder(

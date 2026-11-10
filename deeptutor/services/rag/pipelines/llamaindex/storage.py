@@ -69,7 +69,14 @@ def cleanup_failed_version_dir(storage_dir: Path) -> bool:
     """Remove an empty flat version dir created by a failed indexing attempt."""
     if not storage_dir.is_dir() or not storage_dir.name.startswith("version-"):
         return False
-    storage_empty = not any(child for child in storage_dir.iterdir() if child.name != "meta.json")
+    # A candidate that only carries the publication guard never produced an
+    # index, so it is a leftover of the failed run rather than a version that
+    # could still be inspected.
+    storage_empty = not any(
+        child
+        for child in storage_dir.iterdir()
+        if child.name not in {"meta.json", ".building.json"}
+    )
     meta_path = storage_dir / "meta.json"
     if storage_empty and not meta_path.exists():
         shutil.rmtree(storage_dir, ignore_errors=True)

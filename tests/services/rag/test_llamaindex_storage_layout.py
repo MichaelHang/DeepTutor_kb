@@ -311,3 +311,28 @@ def test_hybrid_fallback_to_vector_warns_instead_of_staying_silent(
 
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
     assert any("vector-only" in r.getMessage() for r in warnings)
+
+
+def test_failed_version_dir_with_only_the_publication_guard_is_removed(tmp_path: Path) -> None:
+    """A candidate that never produced an index is a leftover, not a version."""
+    from deeptutor.services.rag.pipelines.llamaindex.storage import cleanup_failed_version_dir
+
+    candidate = tmp_path / "version-182"
+    candidate.mkdir()
+    (candidate / ".building.json").write_text('{"state": "building"}', encoding="utf-8")
+
+    assert cleanup_failed_version_dir(candidate) is True
+    assert not candidate.exists()
+
+
+def test_failed_version_dir_with_index_output_is_kept(tmp_path: Path) -> None:
+    """A candidate that holds index files stays around for diagnosis."""
+    from deeptutor.services.rag.pipelines.llamaindex.storage import cleanup_failed_version_dir
+
+    candidate = tmp_path / "version-182"
+    candidate.mkdir()
+    (candidate / ".building.json").write_text('{"state": "building"}', encoding="utf-8")
+    (candidate / "docstore.json").write_text("{}", encoding="utf-8")
+
+    assert cleanup_failed_version_dir(candidate) is False
+    assert candidate.exists()
