@@ -180,6 +180,43 @@ def test_linked_folder_routes_return_explicit_contract(
     assert listed.json()[0]["last_sync"] is None
 
 
+def test_linked_folders_report_what_they_actually_imported(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The folder holds two files but has only synced one of them.
+
+    The unlink dialog counts the documents the link imported, not the files
+    the folder happens to hold, so the two numbers are reported separately.
+    """
+    manager = _FolderManager(tmp_path)
+    manager.folder["synced_files"] = {str(tmp_path / "notes" / "note.md"): "hash"}
+    _patch_manager(monkeypatch, manager)
+
+    with TestClient(_build_app()) as client:
+        listed = client.get("/api/knowledge-bases/kb/linked-folders")
+
+    assert listed.status_code == 200
+    folder = listed.json()[0]
+    assert folder["file_count"] == 2
+    assert folder["imported_count"] == 1
+
+
+def test_linked_folders_report_nothing_imported_before_the_first_sync(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A folder that was never synced imported nothing."""
+    manager = _FolderManager(tmp_path)
+    _patch_manager(monkeypatch, manager)
+
+    with TestClient(_build_app()) as client:
+        listed = client.get("/api/knowledge-bases/kb/linked-folders")
+
+    assert listed.status_code == 200
+    folder = listed.json()[0]
+    assert folder["file_count"] == 2
+    assert folder["imported_count"] == 0
+
+
 def test_noop_sync_records_success_and_returns_sync_contract(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

@@ -131,6 +131,24 @@ def visible_run(kb_dir: Path) -> dict[str, Any] | None:
     }
 
 
+def indexing_run_is_live(kb_dir: Path) -> bool:
+    """Whether an indexing run currently owns ``kb_dir``.
+
+    A rebuild writes its version directory before it publishes, and the
+    publication guard stays behind after a successful publish — so "is this
+    version still being built" is a question about the run that owns the
+    knowledge base, not about the directory. A build that was interrupted
+    leaves its directory behind under that guard forever; only a live run may
+    still be writing into it.
+    """
+    try:
+        run = visible_run(kb_dir)
+    except OSError:
+        # An unreadable journal means the owner may still be at work.
+        return True
+    return bool(run) and run.get("state") == "running"
+
+
 class IndexingRun:
     def __init__(
         self,

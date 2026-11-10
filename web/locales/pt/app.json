@@ -6610,6 +6610,7 @@
   "The documents were removed, but the index could not be rebuilt automatically ({{error}}). Rebuild it to stop them from being retrieved.": "Os documentos foram removidos, mas o índice não pôde ser reconstruído automaticamente ({{error}}). Reconstrua-o para que deixem de ser recuperados.",
   "The index is rebuilt afterwards, so their content stops being retrieved.": "O índice é reconstruído depois, pelo que o seu conteúdo deixa de ser recuperado.",
   "This folder has imported {{count}} document(s) into this knowledge base. Unlinking deletes them together with the link.": "Esta pasta importou {{count}} documento(s) para esta base de conhecimento. Desvincular elimina-os juntamente com a ligação.",
+  "This folder has not imported any documents into this knowledge base yet. Unlinking only removes the link.": "Esta pasta ainda não importou documentos para esta base de conhecimento. Desvincular elimina apenas a ligação.",
   "This index version is left over from an earlier rebuild and is not serving retrieval. Deleting it frees its disk space.": "Esta versão do índice sobrou de uma reconstrução anterior e não está a servir a recuperação. Eliminá-la liberta o espaço em disco.",
   "Unlink and delete documents": "Desvincular e eliminar documentos",
   "Unlink this folder?": "Desvincular esta pasta?",

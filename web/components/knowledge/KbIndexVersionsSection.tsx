@@ -539,6 +539,10 @@ function IndexVersionRow({
   const isLegacy = lightRagState === "legacy" || !!version.legacy;
   const isFailedLightRagCandidate = lightRagState === "failed";
   const isBuildingLightRagCandidate = lightRagState === "building";
+  // A version directory that never published is the leftover of an
+  // interrupted build: the publication guard keeps it looking like a build in
+  // progress, so the list has to say what it really is.
+  const isUnpublished = version.state === "unpublished";
   const canDelete =
     !isActive &&
     !isLegacy &&
@@ -551,13 +555,15 @@ function IndexVersionRow({
   const created = formatKnowledgeTimestamp(version.created_at);
   const statusHint = isActive
     ? t("Active version")
-    : isHistorical
-      ? t("Historical version (kept from an earlier rebuild)")
-      : isPhantom
-        ? t("Stale (matches active config but storage is empty)")
-        : isLegacy
-          ? t("Legacy index format")
-          : t("Inactive version");
+    : isUnpublished
+      ? t("Not published")
+      : isHistorical
+        ? t("Historical version (kept from an earlier rebuild)")
+        : isPhantom
+          ? t("Stale (matches active config but storage is empty)")
+          : isLegacy
+            ? t("Legacy index format")
+            : t("Inactive version");
 
   return (
     <li className="flex items-center gap-3 px-3 py-2.5">
@@ -569,7 +575,7 @@ function IndexVersionRow({
           className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${
             isActive
               ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-300"
-              : isPhantom
+              : isPhantom || isUnpublished
                 ? "bg-amber-100 text-amber-600 dark:bg-amber-950/30 dark:text-amber-300"
                 : "bg-[var(--muted)] text-[var(--muted-foreground)]"
           }`}
@@ -578,7 +584,7 @@ function IndexVersionRow({
             <Star className="h-3.5 w-3.5" fill="currentColor" />
           ) : isBuildingLightRagCandidate ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : isPhantom ? (
+          ) : isPhantom || isUnpublished ? (
             <AlertTriangle className="h-3.5 w-3.5" />
           ) : isLegacy ? (
             <Clock className="h-3.5 w-3.5" />
@@ -621,6 +627,11 @@ function IndexVersionRow({
           )}
           {isFailedLightRagCandidate && (
             <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-700 dark:bg-red-950/30 dark:text-red-300">
+              {t("Not published")}
+            </span>
+          )}
+          {isUnpublished && !isFailedLightRagCandidate && (
+            <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
               {t("Not published")}
             </span>
           )}

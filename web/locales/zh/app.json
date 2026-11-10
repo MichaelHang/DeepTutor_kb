@@ -6592,6 +6592,7 @@
   "The documents were removed, but the index could not be rebuilt automatically ({{error}}). Rebuild it to stop them from being retrieved.": "文档已删除，但索引未能自动重建（{{error}}）。请手动重建索引，使这些内容不再被检索到。",
   "The index is rebuilt afterwards, so their content stops being retrieved.": "随后会重建索引，使这些内容不再被检索到。",
   "This folder has imported {{count}} document(s) into this knowledge base. Unlinking deletes them together with the link.": "该文件夹已向此知识库导入 {{count}} 个文档。解除关联会连同链接一起删除这些文档。",
+  "This folder has not imported any documents into this knowledge base yet. Unlinking only removes the link.": "该文件夹尚未向此知识库导入任何文档。解除关联只会删除链接本身。",
   "This index version is left over from an earlier rebuild and is not serving retrieval. Deleting it frees its disk space.": "此索引版本是早前重建留下的，当前不参与检索。删除后可释放其占用的磁盘空间。",
   "Unlink and delete documents": "解除关联并删除文档",
   "Unlink this folder?": "解除关联这个文件夹？",

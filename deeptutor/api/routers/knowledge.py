@@ -210,6 +210,21 @@ class LinkedFolderInfo(BaseModel):
     added_at: str
     file_count: int
     last_sync: str | None = None
+    #: Files the folder actually imported into this knowledge base. Differs
+    #: from ``file_count`` until the folder is synced for the first time.
+    imported_count: int = 0
+
+
+def _linked_folder_info(folder_info: dict[str, Any]) -> LinkedFolderInfo:
+    """Build the response for one linked folder.
+
+    ``file_count`` is how many files the folder holds right now; the documents
+    it imported into the knowledge base are the ones it synced. The two differ
+    until the folder is synced, so they are reported separately.
+    """
+    synced = folder_info.get("synced_files")
+    imported = len(synced) if isinstance(synced, dict) else 0
+    return LinkedFolderInfo(**{**folder_info, "imported_count": imported})
 
 
 class SyncFolderResponse(BaseModel):
@@ -4447,7 +4462,18 @@ async def delete_kb_index_version(kb_name: str, version: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="Index version not found")
 
     if not is_version_published(target):
-        raise HTTPException(status_code=409, detail="This version is still being built")
+        # ``.building.json`` is a permanent publication guard, so a build that
+        # was interrupted leaves a directory behind that keeps claiming to be
+        # under construction. Only a live run may still be writing into it;
+        # once no run owns the knowledge base the leftover is dead weight the
+        # user must be able to drop.
+        from deeptutor.knowledge.indexing_run import indexing_run_is_live
+
+        if indexing_run_is_live(kb_dir):
+            raise HTTPException(status_code=409, detail="This version is still being built")
+        logger.info(
+            "Removing the unpublished index version '%s' of KB '%s'", version, resolved_name
+        )
 
     signature = entry_signature(kb_entry)
     matched = find_matching_version(kb_dir, signature) if signature else None
@@ -4924,7 +4950,7 @@ async def link_folder(kb_name: str, request: LinkFolderRequest):
         _assert_not_connected_kb(resolved_name, _load_kb_entry_or_404(manager, resolved_name))
         folder_info = manager.link_folder(resolved_name, request.folder_path)
         logger.info(f"Linked folder '{request.folder_path}' to KB '{kb_name}'")
-        return LinkedFolderInfo(**folder_info)
+        return _linked_folder_info(folder_info)
     except (HTTPException, AccessError):
         raise
     except ValueError as e:
@@ -4943,7 +4969,7 @@ async def get_linked_folders(kb_name: str):
         resource = resolve_kb(kb_name)
         manager = manager_for_resource(resource)
         folders = manager.get_linked_folders(resource.name)
-        return [LinkedFolderInfo(**f) for f in folders]
+        return [_linked_folder_info(f) for f in folders]
     except (HTTPException, AccessError):
         raise
     except ValueError:

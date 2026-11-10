@@ -6592,6 +6592,7 @@
   "The documents were removed, but the index could not be rebuilt automatically ({{error}}). Rebuild it to stop them from being retrieved.": "Các tài liệu đã được xóa, nhưng chỉ mục không thể được xây dựng lại tự động ({{error}}). Hãy xây dựng lại để chúng không còn được truy xuất.",
   "The index is rebuilt afterwards, so their content stops being retrieved.": "Chỉ mục được xây dựng lại sau đó, nên nội dung của chúng không còn được truy xuất.",
   "This folder has imported {{count}} document(s) into this knowledge base. Unlinking deletes them together with the link.": "Thư mục này đã nhập {{count}} tài liệu vào cơ sở tri thức này. Hủy liên kết sẽ xóa chúng cùng với liên kết.",
+  "This folder has not imported any documents into this knowledge base yet. Unlinking only removes the link.": "Thư mục này chưa nhập tài liệu nào vào cơ sở tri thức này. Hủy liên kết chỉ xóa liên kết.",
   "This index version is left over from an earlier rebuild and is not serving retrieval. Deleting it frees its disk space.": "Phiên bản chỉ mục này còn sót lại từ lần xây dựng trước và không phục vụ truy xuất. Xóa nó sẽ giải phóng dung lượng đĩa.",
   "Unlink and delete documents": "Hủy liên kết và xóa tài liệu",
   "Unlink this folder?": "Hủy liên kết thư mục này?",

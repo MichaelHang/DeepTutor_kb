@@ -6592,6 +6592,7 @@
   "The documents were removed, but the index could not be rebuilt automatically ({{error}}). Rebuild it to stop them from being retrieved.": "Die Dokumente wurden entfernt, der Index konnte jedoch nicht automatisch neu aufgebaut werden ({{error}}). Bauen Sie ihn neu auf, damit sie nicht mehr abgerufen werden.",
   "The index is rebuilt afterwards, so their content stops being retrieved.": "Danach wird der Index neu aufgebaut, sodass ihre Inhalte nicht mehr abgerufen werden.",
   "This folder has imported {{count}} document(s) into this knowledge base. Unlinking deletes them together with the link.": "Dieser Ordner hat {{count}} Dokument(e) in diese Knowledge Base importiert. Beim Aufheben der Verknüpfung werden sie zusammen mit der Verknüpfung gelöscht.",
+  "This folder has not imported any documents into this knowledge base yet. Unlinking only removes the link.": "Dieser Ordner hat noch keine Dokumente in diese Knowledge Base importiert. Beim Aufheben der Verknüpfung wird nur die Verknüpfung gelöscht.",
   "This index version is left over from an earlier rebuild and is not serving retrieval. Deleting it frees its disk space.": "Diese Indexversion stammt aus einem früheren Rebuild und wird nicht für die Suche verwendet. Das Löschen gibt ihren Speicherplatz frei.",
   "Unlink and delete documents": "Verknüpfung aufheben und Dokumente löschen",
   "Unlink this folder?": "Diesen Ordner-Verknüpfung aufheben?",

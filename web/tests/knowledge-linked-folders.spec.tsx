@@ -35,6 +35,7 @@ const folder = {
   added_at: "2026-09-09T10:00:00",
   file_count: 0,
   last_sync: null,
+  imported_count: 0,
 };
 
 beforeEach(() => {
@@ -280,7 +281,7 @@ it("shows a retry action when the linked-folder list fails to load", async () =>
 });
 
 it("validates the link modal and confirms unlinking", async () => {
-  fixture.list.mockResolvedValue([{ ...folder, file_count: 3 }]);
+  fixture.list.mockResolvedValue([{ ...folder, file_count: 3, imported_count: 3 }]);
   const onLinkFolder = vi.fn().mockResolvedValue(undefined);
   const onUnlinkFolder = vi.fn().mockResolvedValue({
     message: "Folder unlinked successfully",
@@ -326,6 +327,27 @@ it("validates the link modal and confirms unlinking", async () => {
   );
   await waitFor(() => expect(onUnlinkFolder).toHaveBeenCalledWith("folder-1"));
   expect(screen.queryByText("/notes")).not.toBeInTheDocument();
+});
+
+it("does not claim that a never-synced folder imported documents", async () => {
+  fixture.list.mockResolvedValue([{ ...folder, file_count: 102, imported_count: 0 }]);
+
+  render(
+    <KbLinkedFoldersSection
+      kb={kb}
+      onLinkFolder={vi.fn()}
+      onUnlinkFolder={vi.fn()}
+      onSyncFolder={vi.fn()}
+    />,
+  );
+
+  await waitFor(() => expect(screen.getByText("/notes")).toBeInTheDocument());
+  fireEvent.click(screen.getByRole("button", { name: "Unlink /notes" }));
+  const confirmDialog = await screen.findByRole("alertdialog");
+  expect(confirmDialog).toHaveTextContent(
+    "This folder has not imported any documents into this knowledge base yet.",
+  );
+  expect(confirmDialog).not.toHaveTextContent("document(s)");
 });
 
 it("reports a failed index rebuild after unlinking", async () => {

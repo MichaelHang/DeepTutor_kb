@@ -6614,6 +6614,7 @@
   "The documents were removed, but the index could not be rebuilt automatically ({{error}}). Rebuild it to stop them from being retrieved.": "Dokumenty zostały usunięte, ale indeksu nie udało się odbudować automatycznie ({{error}}). Odbuduj go, aby przestały być wyszukiwane.",
   "The index is rebuilt afterwards, so their content stops being retrieved.": "Następnie indeks jest odbudowywany, więc ich treść przestaje być wyszukiwana.",
   "This folder has imported {{count}} document(s) into this knowledge base. Unlinking deletes them together with the link.": "Ten folder zaimportował {{count}} dokument(ów) do tej bazy wiedzy. Odłączenie usuwa je razem z połączeniem.",
+  "This folder has not imported any documents into this knowledge base yet. Unlinking only removes the link.": "Ten folder nie zaimportował jeszcze żadnych dokumentów do tej bazy wiedzy. Odłączenie usuwa tylko połączenie.",
   "This index version is left over from an earlier rebuild and is not serving retrieval. Deleting it frees its disk space.": "Ta wersja indeksu pochodzi z wcześniejszego przebudowania i nie służy do wyszukiwania. Jej usunięcie zwolni zajmowane miejsce na dysku.",
   "Unlink and delete documents": "Odłącz i usuń dokumenty",
   "Unlink this folder?": "Odłączyć ten folder?",

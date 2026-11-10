@@ -6592,6 +6592,7 @@
   "The documents were removed, but the index could not be rebuilt automatically ({{error}}). Rebuild it to stop them from being retrieved.": "ドキュメントは削除されましたが、インデックスは自動的に再構築できませんでした（{{error}}）。参照されなくするには再構築してください。",
   "The index is rebuilt afterwards, so their content stops being retrieved.": "その後インデックスが再構築されるため、その内容は参照されなくなります。",
   "This folder has imported {{count}} document(s) into this knowledge base. Unlinking deletes them together with the link.": "このフォルダは、このナレッジベースに {{count}} 件のドキュメントをインポートしました。連携を解除すると、リンクとともにドキュメントも削除されます。",
+  "This folder has not imported any documents into this knowledge base yet. Unlinking only removes the link.": "このフォルダはまだこのナレッジベースへドキュメントをインポートしていません。連携を解除すると、リンクのみ削除されます。",
   "This index version is left over from an earlier rebuild and is not serving retrieval. Deleting it frees its disk space.": "このインデックスバージョンは以前の再構築に残ったもので、現在は検索に使用されていません。削除するとディスク容量が解放されます。",
   "Unlink and delete documents": "連携を解除してドキュメントを削除",
   "Unlink this folder?": "このフォルダの連携を解除しますか？",

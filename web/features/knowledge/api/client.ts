@@ -955,6 +955,8 @@ export interface LinkedFolderInfo {
   added_at: string;
   file_count: number;
   last_sync: string | null;
+  /** Documents the folder actually imported into this knowledge base. */
+  imported_count: number;
 }
 
 export interface SyncFolderResponse {

@@ -332,16 +332,22 @@ export default function KbLinkedFoldersSection({
         onCancel={() => setUnlinkTarget(null)}
       >
         <p className="text-[13px] leading-relaxed">
-          {t(
-            "This folder has imported {{count}} document(s) into this knowledge base. Unlinking deletes them together with the link.",
-            { count: unlinkTarget?.file_count ?? 0 },
-          )}
+          {unlinkTarget && unlinkTarget.imported_count > 0
+            ? t(
+                "This folder has imported {{count}} document(s) into this knowledge base. Unlinking deletes them together with the link.",
+                { count: unlinkTarget.imported_count },
+              )
+            : t(
+                "This folder has not imported any documents into this knowledge base yet. Unlinking only removes the link.",
+              )}
         </p>
-        <p className="mt-2 text-[13px] leading-relaxed">
-          {t(
-            "The index is rebuilt afterwards, so their content stops being retrieved.",
-          )}
-        </p>
+        {unlinkTarget && unlinkTarget.imported_count > 0 && (
+          <p className="mt-2 text-[13px] leading-relaxed">
+            {t(
+              "The index is rebuilt afterwards, so their content stops being retrieved.",
+            )}
+          </p>
+        )}
       </ConfirmDialog>
     </div>
   );

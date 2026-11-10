@@ -7495,6 +7495,7 @@
   "The documents were removed, but the index could not be rebuilt automatically ({{error}}). Rebuild it to stop them from being retrieved.": "Les documents ont été supprimés, mais l'index n'a pas pu être reconstruit automatiquement ({{error}}). Reconstruisez-le pour qu'ils ne soient plus récupérés.",
   "The index is rebuilt afterwards, so their content stops being retrieved.": "L'index est ensuite reconstruit, afin que leur contenu ne soit plus récupéré.",
   "This folder has imported {{count}} document(s) into this knowledge base. Unlinking deletes them together with the link.": "Ce dossier a importé {{count}} document(s) dans cette base de connaissances. Le détachement les supprime avec le lien.",
+  "This folder has not imported any documents into this knowledge base yet. Unlinking only removes the link.": "Ce dossier n'a encore importé aucun document dans cette base de connaissances. Le détachement supprime uniquement le lien.",
   "This index version is left over from an earlier rebuild and is not serving retrieval. Deleting it frees its disk space.": "Cette version d'index provient d'une reconstruction antérieure et ne sert pas à la recherche. La supprimer libère son espace disque.",
   "Unlink and delete documents": "Détacher et supprimer les documents",
   "Unlink this folder?": "Détacher ce dossier ?",

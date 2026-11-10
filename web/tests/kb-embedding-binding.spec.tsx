@@ -121,6 +121,33 @@ it("lets a healthy KB explicitly re-index with another configured embedding mode
   );
 });
 
+it("marks a version that never published as not published", async () => {
+  const kb = {
+    name: "notes",
+    status: "ready",
+    metadata: { embedding_selection: a, embedding_status: "ready" },
+    statistics: {
+      raw_documents: 2,
+      rag_provider: "llamaindex",
+      active_match: true,
+      index_versions: [
+        {
+          version: "version-2",
+          signature: "sig-old",
+          state: "unpublished",
+          ready: false,
+          created_at: "2026-11-10T10:23:00Z",
+        },
+      ],
+    },
+  } as unknown as KnowledgeBase;
+  render(<KbIndexVersionsSection kb={kb} onReindex={vi.fn()} />);
+
+  expect(screen.getByText("version-2")).toBeInTheDocument();
+  expect(screen.getByRole("img", { name: "Not published" })).toBeInTheDocument();
+  expect(screen.getAllByText("Not published").length).toBeGreaterThan(0);
+});
+
 it("lists affected knowledge bases and explains that deletion preserves their data", async () => {
   fixtures.usage.mockResolvedValue([
     { ...a, name: "Physics", workspace_name: "Study" },

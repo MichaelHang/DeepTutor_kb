@@ -6824,6 +6824,11 @@
             "title": "Id",
             "type": "string"
           },
+          "imported_count": {
+            "default": 0,
+            "title": "Imported Count",
+            "type": "integer"
+          },
           "last_sync": {
             "anyOf": [
               {

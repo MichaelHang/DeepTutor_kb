@@ -186,6 +186,13 @@ def _entry_from_flat_version(version_dir: Path) -> dict[str, Any]:
     meta["storage_path"] = str(version_dir)
     meta["version_path"] = str(version_dir)
     meta["layout"] = "flat"
+    if (version_dir / ".building.json").exists() and (stored_meta or {}).get(
+        "state"
+    ) != "published":
+        # The publication guard outlives a failed build, so a guarded directory
+        # that never published is the leftover of an interrupted build rather
+        # than a version anybody can inspect.
+        meta["state"] = "unpublished"
     return meta
 
 

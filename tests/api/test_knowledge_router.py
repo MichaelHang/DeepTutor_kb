@@ -2447,8 +2447,72 @@ def test_delete_index_version_allows_a_published_version_with_a_building_guard(
     assert not stale.exists()
 
 
-def test_delete_index_version_refuses_an_unpublished_candidate(monkeypatch, tmp_path: Path) -> None:
-    """A guarded version that never published is still under construction."""
+def _write_live_indexing_run(kb_dir: Path) -> None:
+    """Write an indexing journal whose owner is this very process.
+
+    The owner check compares the recorded start time with the live process, so
+    the journal has to name a process that is actually running.
+    """
+    import os
+
+    import psutil
+
+    pid = os.getpid()
+    (kb_dir / ".indexing-run.json").write_text(
+        json.dumps(
+            {
+                "schema": 1,
+                "task_id": "task-live",
+                "state": "running",
+                "pid": pid,
+                "process_started_at": psutil.Process(pid).create_time(),
+                "documents": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_delete_index_version_refuses_an_unpublished_candidate_while_a_run_is_live(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """A candidate that a live run is still writing into must survive."""
+    manager = _ready_kb_manager(tmp_path)
+    kb_dir = manager.base_dir / "kb"
+    candidate = _write_flat_version(kb_dir, "version-1", "sig-old")
+    (candidate / ".building.json").write_text(json.dumps({"state": "building"}), encoding="utf-8")
+    (candidate / "meta.json").write_text(
+        json.dumps(
+            {
+                "version": "version-1",
+                "signature": "sig-old",
+                "layout": "flat",
+                "provider": "llamaindex",
+                "state": "building",
+            }
+        ),
+        encoding="utf-8",
+    )
+    _write_live_indexing_run(kb_dir)
+    monkeypatch.setattr(knowledge_router_module, "get_kb_manager", lambda: manager)
+    monkeypatch.setattr(knowledge_router_module, "_kb_base_dir", tmp_path / "knowledge_bases")
+
+    with TestClient(_build_app()) as client:
+        response = client.delete("/api/knowledge-bases/kb/index-versions/version-1")
+
+    assert response.status_code == 409
+    assert candidate.is_dir()
+
+
+def test_delete_index_version_removes_an_abandoned_unpublished_candidate(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """An interrupted build leaves its directory behind; it must be removable.
+
+    The publication guard is permanent, so a candidate that never published
+    looks like a build in progress forever. Once no run owns the knowledge
+    base it is dead weight, and the user has to be able to drop it.
+    """
     manager = _ready_kb_manager(tmp_path)
     kb_dir = manager.base_dir / "kb"
     candidate = _write_flat_version(kb_dir, "version-1", "sig-old")
@@ -2471,8 +2535,9 @@ def test_delete_index_version_refuses_an_unpublished_candidate(monkeypatch, tmp_
     with TestClient(_build_app()) as client:
         response = client.delete("/api/knowledge-bases/kb/index-versions/version-1")
 
-    assert response.status_code == 409
-    assert candidate.is_dir()
+    assert response.status_code == 200
+    assert response.json()["deleted"] == "version-1"
+    assert not candidate.exists()
 
 
 def test_delete_index_version_refuses_the_version_serving_retrieval(

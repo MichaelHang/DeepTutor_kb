@@ -33,6 +33,7 @@ test("linked-folder API methods preserve encoded resource identifiers", async ()
     added_at: "2026-09-09T10:00:00",
     file_count: 2,
     last_sync: null,
+    imported_count: 2,
   };
   const restore = stubFetch(async (input, init) => {
     requests.push({ url: String(input), init });

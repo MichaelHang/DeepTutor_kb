@@ -6614,6 +6614,7 @@
   "The documents were removed, but the index could not be rebuilt automatically ({{error}}). Rebuild it to stop them from being retrieved.": "Документи видалено, але індекс не вдалося перебудувати автоматично ({{error}}). Перебудуйте його, щоб їх більше не знаходили пошуком.",
   "The index is rebuilt afterwards, so their content stops being retrieved.": "Після цього індекс перебудовується, тож їхній вміст більше не знаходиться пошуком.",
   "This folder has imported {{count}} document(s) into this knowledge base. Unlinking deletes them together with the link.": "Ця тека імпортувала {{count}} документ(ів) до цієї бази знань. Відв'язування видаляє їх разом із посиланням.",
+  "This folder has not imported any documents into this knowledge base yet. Unlinking only removes the link.": "Ця тека ще не імпортувала жодних документів до цієї бази знань. Відв'язування видаляє лише посилання.",
   "This index version is left over from an earlier rebuild and is not serving retrieval. Deleting it frees its disk space.": "Ця версія індексу лишилася від попередньої перебудови та не використовується для пошуку. Її видалення звільнить місце на диску.",
   "Unlink and delete documents": "Відв'язати та видалити документи",
   "Unlink this folder?": "Відв'язати цю теку?",

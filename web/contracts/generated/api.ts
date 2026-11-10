@@ -14833,6 +14833,11 @@ export interface components {
       readonly file_count: number;
       /** Id */
       readonly id: string;
+      /**
+       * Imported Count
+       * @default 0
+       */
+      readonly imported_count: number;
       /** Last Sync */
       readonly last_sync?: string | null;
       /** Path */
