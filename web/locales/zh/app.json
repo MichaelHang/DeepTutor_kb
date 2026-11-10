@@ -6500,6 +6500,7 @@
   "Could not delete review strategy. Try again.": "无法删除复习策略，请重试。",
   "Choose a server folder": "选择服务器文件夹",
   "Browse folders on the server and choose a project workspace.": "逐层浏览服务器文件夹，选择要使用的项目工作区。",
+"Browse folders on the server and choose the folder to link.": "逐层浏览服务器文件夹，选择要关联的文件夹。",
   "Select this folder": "选择此文件夹",
   "Parent folder": "返回上一级",
   "Current folder": "当前文件夹",

@@ -75,3 +75,18 @@ it('recognizes a Windows server root while navigating its child folders', async 
   render(<ServerFolderPicker onClose={vi.fn()} onSelect={vi.fn()} />)
   expect(await screen.findByRole('combobox', { name: 'Browse root' })).toHaveValue('D:\\Projects')
 })
+
+it('browses document sources with the source scope', async () => {
+  fixture.browse.mockResolvedValue(page(roots[0].path, []))
+  render(<ServerFolderPicker scope="source" onClose={vi.fn()} onSelect={vi.fn()} />)
+  await waitFor(() => expect(fixture.browse).toHaveBeenCalledWith('', 'source'))
+  expect(
+    screen.getByText('Browse folders on the server and choose the folder to link.'),
+  ).toBeInTheDocument()
+})
+
+it('keeps the workspace scope as the default', async () => {
+  fixture.browse.mockResolvedValue(page(roots[0].path, []))
+  render(<ServerFolderPicker onClose={vi.fn()} onSelect={vi.fn()} />)
+  await waitFor(() => expect(fixture.browse).toHaveBeenCalledWith('', 'workspace'))
+})

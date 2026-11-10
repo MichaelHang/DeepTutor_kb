@@ -58,8 +58,22 @@ export interface ServerFolderListing extends ServerFolder {
   truncated: boolean
 }
 
-export function browseServerFolders(path = ''): Promise<ServerFolderListing> {
-  return request(`/api/settings/workspace/folders?path=${encodeURIComponent(path)}`)
+/**
+ * Which set of roots the folder picker may browse.
+ *
+ * `workspace` lists the folders a workspace root may be taken from.
+ * `source` lists the folders a knowledge base may link its documents from —
+ * a read-only source, not a place the agent may write.
+ */
+export type ServerFolderScope = 'workspace' | 'source'
+
+export function browseServerFolders(
+  path = '',
+  scope: ServerFolderScope = 'workspace',
+): Promise<ServerFolderListing> {
+  return request(
+    `/api/settings/workspace/folders?path=${encodeURIComponent(path)}&scope=${scope}`,
+  )
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {

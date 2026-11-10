@@ -6351,6 +6351,7 @@
   "Could not delete review strategy. Try again.": "Tekrar stratejisi silinemedi. Yeniden deneyin.",
   "Choose a server folder": "Sunucuda bir klasör seçin",
   "Browse folders on the server and choose a project workspace.": "Sunucudaki klasörlere göz atın ve bir proje çalışma alanı seçin.",
+"Browse folders on the server and choose the folder to link.": "Sunucudaki klasörlerde gezinin ve bağlanacak klasörü seçin.",
   "Select this folder": "Bu klasörü seç",
   "Parent folder": "Üst klasör",
   "Current folder": "Geçerli klasör",

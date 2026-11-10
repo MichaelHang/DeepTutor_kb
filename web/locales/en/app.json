@@ -6500,6 +6500,7 @@
   "Could not delete review strategy. Try again.": "Could not delete review strategy. Try again.",
   "Choose a server folder": "Choose a server folder",
   "Browse folders on the server and choose a project workspace.": "Browse folders on the server and choose a project workspace.",
+"Browse folders on the server and choose the folder to link.": "Browse folders on the server and choose the folder to link.",
   "Select this folder": "Select this folder",
   "Parent folder": "Parent folder",
   "Current folder": "Current folder",

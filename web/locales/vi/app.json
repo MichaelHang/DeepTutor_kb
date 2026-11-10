@@ -6368,6 +6368,7 @@
   "Could not delete review strategy. Try again.": "Không thể xóa chiến lược ôn tập. Hãy thử lại.",
   "Choose a server folder": "Chọn thư mục trên máy chủ",
   "Browse folders on the server and choose a project workspace.": "Duyệt các thư mục trên máy chủ và chọn một không gian làm việc cho dự án.",
+"Browse folders on the server and choose the folder to link.": "Duyệt các thư mục trên máy chủ và chọn thư mục cần liên kết.",
   "Select this folder": "Chọn thư mục này",
   "Parent folder": "Thư mục cha",
   "Current folder": "Thư mục hiện tại",

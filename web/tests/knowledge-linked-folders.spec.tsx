@@ -7,6 +7,7 @@ const fixture = vi.hoisted(() => ({
   t: (key: string, values?: Record<string, string | number>) =>
     key.replace(/\{\{(\w+)\}\}/g, (_, name: string) => String(values?.[name] ?? `{{${name}}}`)),
   list: vi.fn(),
+  browse: vi.fn(),
 }));
 
 vi.mock("react-i18next", () => ({
@@ -15,6 +16,11 @@ vi.mock("react-i18next", () => ({
 
 vi.mock("@/features/knowledge/api/folders", () => ({
   listLinkedFolders: fixture.list,
+}));
+
+vi.mock("@/lib/workspaces-api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/workspaces-api")>()),
+  browseServerFolders: fixture.browse,
 }));
 
 const kb: KnowledgeBase = {
@@ -33,6 +39,26 @@ const folder = {
 
 beforeEach(() => {
   fixture.list.mockReset().mockResolvedValue([]);
+  fixture.browse.mockReset().mockImplementation(async (path: string) => {
+    if (path === "/materials/地理") {
+      return {
+        roots: [{ name: "materials", path: "/materials" }],
+        path: "/materials/地理",
+        name: "地理",
+        parent: "/materials",
+        folders: [],
+        truncated: false,
+      };
+    }
+    return {
+      roots: [{ name: "materials", path: "/materials" }],
+      path: "/materials",
+      name: "materials",
+      parent: null,
+      folders: [{ name: "地理", path: "/materials/地理" }],
+      truncated: false,
+    };
+  });
 });
 
 afterEach(() => {
@@ -89,6 +115,83 @@ it("links a folder without automatically starting its first sync", async () => {
   expect(onSyncFolder).not.toHaveBeenCalled();
   expect(await screen.findByText("/notes")).toBeInTheDocument();
   expect(screen.getByText(/Never synced/)).toBeInTheDocument();
+});
+
+it("picks a server folder with the browser and links it without typing a path", async () => {
+  const onLinkFolder = vi.fn().mockResolvedValue(undefined);
+  fixture.list.mockResolvedValue([]);
+
+  render(
+    <KbLinkedFoldersSection
+      kb={kb}
+      onLinkFolder={onLinkFolder}
+      onUnlinkFolder={vi.fn()}
+      onSyncFolder={vi.fn()}
+    />,
+  );
+
+  fireEvent.click((await screen.findAllByRole("button", { name: "Link folder" }))[0]);
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.click(within(dialog).getByRole("button", { name: "Choose a server folder" }));
+
+  const picker = await screen.findByRole("dialog", { name: "Choose a server folder" });
+  fireEvent.click(await within(picker).findByRole("button", { name: "地理" }));
+  await waitFor(() =>
+    expect(screen.getByLabelText("Current folder")).toHaveTextContent("/materials/地理"),
+  );
+  fireEvent.click(within(picker).getByRole("button", { name: "Select this folder" }));
+
+  await waitFor(() =>
+    expect(within(dialog).getByLabelText("Folder path")).toHaveValue("/materials/地理"),
+  );
+  expect(fixture.browse).toHaveBeenCalledWith("", "source");
+
+  fireEvent.click(within(dialog).getByRole("button", { name: "Link folder" }));
+  await waitFor(() => expect(onLinkFolder).toHaveBeenCalledWith("/materials/地理"));
+});
+
+it("does not complain about an empty path when the folder browser is opened", async () => {
+  fixture.list.mockResolvedValue([]);
+
+  render(
+    <KbLinkedFoldersSection
+      kb={kb}
+      onLinkFolder={vi.fn()}
+      onUnlinkFolder={vi.fn()}
+      onSyncFolder={vi.fn()}
+    />,
+  );
+
+  fireEvent.click((await screen.findAllByRole("button", { name: "Link folder" }))[0]);
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.click(within(dialog).getByRole("button", { name: "Choose a server folder" }));
+
+  await screen.findByRole("dialog", { name: "Choose a server folder" });
+  expect(
+    within(dialog).queryByRole("alert"),
+  ).not.toBeInTheDocument();
+});
+
+it("does not complain about an empty path when the dialog is cancelled", async () => {
+  fixture.list.mockResolvedValue([]);
+
+  render(
+    <KbLinkedFoldersSection
+      kb={kb}
+      onLinkFolder={vi.fn()}
+      onUnlinkFolder={vi.fn()}
+      onSyncFolder={vi.fn()}
+    />,
+  );
+
+  fireEvent.click((await screen.findAllByRole("button", { name: "Link folder" }))[0]);
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog", { name: "Link a local folder" })).not.toBeInTheDocument(),
+  );
+  expect(screen.queryByText("Folder path is required.")).not.toBeInTheDocument();
 });
 
 it("shows the no-change result after a manual sync", async () => {

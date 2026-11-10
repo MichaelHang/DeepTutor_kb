@@ -9,15 +9,19 @@ import {
   browseServerFolders,
   type ServerFolder,
   type ServerFolderListing,
+  type ServerFolderScope,
 } from '@/lib/workspaces-api'
 
 /** Browse the backend filesystem without requiring a manually entered path. */
 export function ServerFolderPicker({
   onClose,
   onSelect,
+  scope = 'workspace',
 }: {
   onClose: () => void
   onSelect: (folder: ServerFolder) => void | Promise<void>
+  /** Which roots may be browsed: a workspace root, or a document source. */
+  scope?: ServerFolderScope
 }) {
   const { t } = useTranslation()
   const [path, setPath] = useState('')
@@ -30,7 +34,7 @@ export function ServerFolderPicker({
 
   useEffect(() => {
     let active = true
-    browseServerFolders(path)
+    browseServerFolders(path, scope)
       .then(data => {
         if (active) {
           setListing(data)
@@ -46,7 +50,7 @@ export function ServerFolderPicker({
     return () => {
       active = false
     }
-  }, [path, attempt])
+  }, [path, attempt, scope])
 
   const navigate = (next: string) => {
     if (next === path) return
@@ -85,7 +89,11 @@ export function ServerFolderPicker({
       busy={saving}
       closeLabel={t('Close')}
       size="lg"
-      description={t('Browse folders on the server and choose a project workspace.')}
+      description={
+        scope === 'source'
+          ? t('Browse folders on the server and choose the folder to link.')
+          : t('Browse folders on the server and choose a project workspace.')
+      }
       footer={
         <>
           <button

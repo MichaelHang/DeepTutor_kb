@@ -6369,6 +6369,7 @@
   "Could not delete review strategy. Try again.": "復習戦略を削除できませんでした。もう一度お試しください。",
   "Choose a server folder": "サーバー上のフォルダーを選択",
   "Browse folders on the server and choose a project workspace.": "サーバー上のフォルダーを参照して、プロジェクトのワークスペースを選びます。",
+"Browse folders on the server and choose the folder to link.": "サーバー上のフォルダーを参照して、リンクするフォルダーを選びます。",
   "Select this folder": "このフォルダーを選択",
   "Parent folder": "親フォルダー",
   "Current folder": "現在のフォルダー",

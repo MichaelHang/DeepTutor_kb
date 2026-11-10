@@ -6409,6 +6409,7 @@
   "Could not delete review strategy. Try again.": "Nie udało się usunąć strategii powtórek. Spróbuj ponownie.",
   "Choose a server folder": "Wybierz folder na serwerze",
   "Browse folders on the server and choose a project workspace.": "Przeglądaj foldery na serwerze i wybierz obszar roboczy projektu.",
+"Browse folders on the server and choose the folder to link.": "Przeglądaj foldery na serwerze i wybierz folder do powiązania.",
   "Select this folder": "Wybierz ten folder",
   "Parent folder": "Folder nadrzędny",
   "Current folder": "Bieżący folder",

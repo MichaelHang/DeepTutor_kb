@@ -2308,6 +2308,31 @@ export interface paths {
     readonly patch?: never;
     readonly trace?: never;
   };
+  readonly "/api/knowledge-bases/{kb_name}/index-versions/{version}": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    readonly get?: never;
+    readonly put?: never;
+    readonly post?: never;
+    /**
+     * Delete Kb Index Version
+     * @description Delete one stored index version of ``kb_name``.
+     *
+     *     Every full rebuild writes a fresh ``version-N`` directory, so a knowledge
+     *     base keeps the earlier ones around. Only the version that currently serves
+     *     retrieval is protected — the rest are leftovers and can be dropped to
+     *     reclaim disk space.
+     */
+    readonly delete: operations["delete_kb_index_version_api_knowledge_bases__kb_name__index_versions__version__delete"];
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
   readonly "/api/knowledge-bases/{kb_name}/indexing-policy": {
     readonly parameters: {
       readonly query?: never;
@@ -2442,7 +2467,13 @@ export interface paths {
     readonly post?: never;
     /**
      * Unlink Folder
-     * @description Unlink a folder from a knowledge base.
+     * @description Unlink a folder from a knowledge base and delete the documents it imported.
+     *
+     *     A linked folder is a source of copies inside the knowledge base. Only the
+     *     link keeps them in sync, so keeping the copies after the link is gone
+     *     would strand them: nothing could refresh or remove them afterwards. They
+     *     are deleted together with the link, and the index is rebuilt so they also
+     *     stop being retrievable.
      */
     readonly delete: operations["unlink_folder_api_knowledge_bases__kb_name__linked_folders__folder_id__delete"];
     readonly options?: never;
@@ -2506,6 +2537,10 @@ export interface paths {
      *     LlamaIndex keys versions by the selected embedding model. The other
      *     providers keep synthetic provider-keyed versions, so they should rebuild
      *     without requiring an embedding-signature precheck.
+     *
+     *     ``force`` rebuilds even when a matching index is already present. It is
+     *     what a content removal needs: the files are gone from ``raw/``, but the
+     *     published index still holds their vectors, and only a rebuild drops them.
      */
     readonly post: operations["reindex_knowledge_base_api_knowledge_bases__kb_name__reindex_post"];
     readonly delete?: never;
@@ -9851,7 +9886,11 @@ export interface paths {
     };
     /**
      * List Server Folders
-     * @description Return folders available to the authenticated workspace picker.
+     * @description Return folders available to the authenticated folder picker.
+     *
+     *     ``workspace`` lists the folders a workspace root may be taken from.
+     *     ``source`` lists the folders a knowledge base may link its documents
+     *     from — a read-only source, not a place the agent may write.
      */
     readonly get: operations["list_server_folders_api_settings_workspace_folders_get"];
     readonly put?: never;
@@ -17257,6 +17296,15 @@ export interface components {
       readonly modified_files: number;
       /** New Files */
       readonly new_files: number;
+      /** Reindex Error */
+      readonly reindex_error?: string | null;
+      /** Reindex Task Id */
+      readonly reindex_task_id?: string | null;
+      /**
+       * Removed Files
+       * @default []
+       */
+      readonly removed_files: readonly string[];
       /** Task Id */
       readonly task_id: string | null;
     };
@@ -24562,6 +24610,44 @@ export interface operations {
       };
     };
   };
+  readonly delete_kb_index_version_api_knowledge_bases__kb_name__index_versions__version__delete: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: {
+        readonly Authorization?: string | null;
+      };
+      readonly path: {
+        readonly kb_name: string;
+        readonly version: string;
+      };
+      readonly cookie?: {
+        readonly dt_token?: string | null;
+      };
+    };
+    readonly requestBody?: never;
+    readonly responses: {
+      /** @description Successful Response */
+      readonly 200: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": {
+            readonly [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      readonly 422: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
   readonly update_pending_indexing_policy_api_knowledge_bases__kb_name__indexing_policy_put: {
     readonly parameters: {
       readonly query?: never;
@@ -24893,7 +24979,9 @@ export interface operations {
   };
   readonly reindex_knowledge_base_api_knowledge_bases__kb_name__reindex_post: {
     readonly parameters: {
-      readonly query?: never;
+      readonly query?: {
+        readonly force?: boolean;
+      };
       readonly header?: {
         readonly Authorization?: string | null;
       };
@@ -41266,6 +41354,7 @@ export interface operations {
     readonly parameters: {
       readonly query?: {
         readonly path?: string;
+        readonly scope?: string;
       };
       readonly header?: {
         readonly Authorization?: string | null;

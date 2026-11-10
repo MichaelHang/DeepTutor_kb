@@ -5,7 +5,7 @@ import pytest
 
 from deeptutor.multi_user.context import reset_current_user, set_current_user
 from deeptutor.multi_user.models import CurrentUser, UserScope
-from deeptutor.services.workspace.folders import browse_folders
+from deeptutor.services.workspace.folders import SOURCE_SCOPE, browse_folders
 from deeptutor.services.workspace.models import WorkspaceError
 from deeptutor.services.workspace.service import ContentWorkspaceService
 
@@ -109,3 +109,45 @@ def test_multiple_roots_are_navigable_without_parent_escape(browser, monkeypatch
     listing = browse_folders(service, str(second))
     assert [row["path"] for row in listing["roots"]] == [str(first), str(second)]
     assert listing["parent"] is None
+
+
+def test_source_scope_uses_its_own_configured_roots(browser, monkeypatch, tmp_path):
+    """A document source is browsed from its own roots, not the workspace ones."""
+    service, workspace_root = browser
+    source_root = tmp_path / "materials"
+    (source_root / "地理").mkdir(parents=True)
+    monkeypatch.setenv("DEEPTUTOR_LINK_FOLDER_ROOTS", str(source_root))
+    monkeypatch.setenv("DEEPTUTOR_WORKSPACE_BROWSER_ROOTS", str(workspace_root))
+
+    listing = browse_folders(service, scope=SOURCE_SCOPE)
+    assert listing["path"] == str(source_root)
+    assert [row["path"] for row in listing["roots"]] == [str(source_root)]
+    assert [entry["name"] for entry in listing["folders"]] == ["地理"]
+    # The workspace roots are not part of the source scope.
+    with pytest.raises(WorkspaceError, match="outside"):
+        browse_folders(service, str(workspace_root), scope=SOURCE_SCOPE)
+
+
+def test_source_scope_is_not_confined_to_the_workspace_access_policy(
+    browser, monkeypatch, tmp_path
+):
+    """Linking records a source location; it does not grant the agent write access."""
+    service, _ = browser
+    source_root = tmp_path / "materials"
+    source_root.mkdir()
+    monkeypatch.setenv("DEEPTUTOR_LINK_FOLDER_ROOTS", str(source_root))
+
+    def deny(root: Path):
+        raise WorkspaceError("denied")
+
+    monkeypatch.setattr(service, "_assert_allowed_root", deny)
+    listing = browse_folders(service, scope=SOURCE_SCOPE)
+    assert listing["path"] == str(source_root)
+
+
+def test_source_scope_defaults_to_the_home_directory(browser, monkeypatch):
+    """Without a configured source root the home directory is offered."""
+    service, _ = browser
+    monkeypatch.delenv("DEEPTUTOR_LINK_FOLDER_ROOTS", raising=False)
+    roots = [row["path"] for row in browse_folders(service, scope=SOURCE_SCOPE)["roots"]]
+    assert str(Path.home().resolve()) in roots

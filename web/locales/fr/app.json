@@ -6551,6 +6551,7 @@
   "Could not delete review strategy. Try again.": "Impossible de supprimer la stratégie de révision. Réessayez.",
   "Choose a server folder": "Choisir un dossier sur le serveur",
   "Browse folders on the server and choose a project workspace.": "Parcourez les dossiers du serveur et choisissez un espace de travail de projet.",
+"Browse folders on the server and choose the folder to link.": "Parcourez les dossiers du serveur et choisissez le dossier à lier.",
   "Select this folder": "Sélectionner ce dossier",
   "Parent folder": "Dossier parent",
   "Current folder": "Dossier actuel",

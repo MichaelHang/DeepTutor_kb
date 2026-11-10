@@ -11930,6 +11930,36 @@
             "title": "New Files",
             "type": "integer"
           },
+          "reindex_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reindex Error"
+          },
+          "reindex_task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reindex Task Id"
+          },
+          "removed_files": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Removed Files",
+            "type": "array"
+          },
           "task_id": {
             "anyOf": [
               {
@@ -29127,6 +29157,92 @@
         ]
       }
     },
+    "/api/knowledge-bases/{kb_name}/index-versions/{version}": {
+      "delete": {
+        "description": "Delete one stored index version of ``kb_name``.\n\nEvery full rebuild writes a fresh ``version-N`` directory, so a knowledge\nbase keeps the earlier ones around. Only the version that currently serves\nretrieval is protected — the rest are leftovers and can be dropped to\nreclaim disk space.",
+        "operationId": "delete_kb_index_version_api_knowledge_bases__kb_name__index_versions__version__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kb_name",
+            "required": true,
+            "schema": {
+              "title": "Kb Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "dt_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dt Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Delete Kb Index Version Api Knowledge Bases  Kb Name  Index Versions  Version  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Kb Index Version",
+        "tags": [
+          "knowledge-bases"
+        ]
+      }
+    },
     "/api/knowledge-bases/{kb_name}/indexing-policy": {
       "put": {
         "description": "Reject obsolete model edits instead of saving a policy that will not apply.",
@@ -29614,7 +29730,7 @@
     },
     "/api/knowledge-bases/{kb_name}/linked-folders/{folder_id}": {
       "delete": {
-        "description": "Unlink a folder from a knowledge base.",
+        "description": "Unlink a folder from a knowledge base and delete the documents it imported.\n\nA linked folder is a source of copies inside the knowledge base. Only the\nlink keeps them in sync, so keeping the copies after the link is gone\nwould strand them: nothing could refresh or remove them afterwards. They\nare deleted together with the link, and the index is rebuilt so they also\nstop being retrievable.",
         "operationId": "unlink_folder_api_knowledge_bases__kb_name__linked_folders__folder_id__delete",
         "parameters": [
           {
@@ -29842,7 +29958,7 @@
     },
     "/api/knowledge-bases/{kb_name}/reindex": {
       "post": {
-        "description": "Re-index ``kb_name`` through its bound RAG provider.\n\nLlamaIndex keys versions by the selected embedding model. The other\nproviders keep synthetic provider-keyed versions, so they should rebuild\nwithout requiring an embedding-signature precheck.",
+        "description": "Re-index ``kb_name`` through its bound RAG provider.\n\nLlamaIndex keys versions by the selected embedding model. The other\nproviders keep synthetic provider-keyed versions, so they should rebuild\nwithout requiring an embedding-signature precheck.\n\n``force`` rebuilds even when a matching index is already present. It is\nwhat a content removal needs: the files are gone from ``raw/``, but the\npublished index still holds their vectors, and only a rebuild drops them.",
         "operationId": "reindex_knowledge_base_api_knowledge_bases__kb_name__reindex_post",
         "parameters": [
           {
@@ -29852,6 +29968,16 @@
             "schema": {
               "title": "Kb Name",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "force",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Force",
+              "type": "boolean"
             }
           },
           {
@@ -60707,7 +60833,7 @@
     },
     "/api/settings/workspace/folders": {
       "get": {
-        "description": "Return folders available to the authenticated workspace picker.",
+        "description": "Return folders available to the authenticated folder picker.\n\n``workspace`` lists the folders a workspace root may be taken from.\n``source`` lists the folders a knowledge base may link its documents\nfrom — a read-only source, not a place the agent may write.",
         "operationId": "list_server_folders_api_settings_workspace_folders_get",
         "parameters": [
           {
@@ -60717,6 +60843,16 @@
             "schema": {
               "default": "",
               "title": "Path",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "workspace",
+              "title": "Scope",
               "type": "string"
             }
           },

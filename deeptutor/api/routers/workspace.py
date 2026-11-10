@@ -28,12 +28,19 @@ files_router.include_router(render_storage_router)
 
 
 @settings_router.get("/folders")
-async def list_server_folders(path: str = "") -> dict:
-    """Return folders available to the authenticated workspace picker."""
-    from deeptutor.services.workspace.folders import browse_folders
+async def list_server_folders(path: str = "", scope: str = "workspace") -> dict:
+    """Return folders available to the authenticated folder picker.
 
+    ``workspace`` lists the folders a workspace root may be taken from.
+    ``source`` lists the folders a knowledge base may link its documents
+    from — a read-only source, not a place the agent may write.
+    """
+    from deeptutor.services.workspace.folders import SOURCE_SCOPE, WORKSPACE_SCOPE, browse_folders
+
+    if scope not in {WORKSPACE_SCOPE, SOURCE_SCOPE}:
+        raise HTTPException(status_code=400, detail="Unknown folder scope.")
     try:
-        return await asyncio.to_thread(browse_folders, get_content_workspace_service(), path)
+        return await asyncio.to_thread(browse_folders, get_content_workspace_service(), path, scope)
     except WorkspaceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

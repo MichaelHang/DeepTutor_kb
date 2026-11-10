@@ -6409,6 +6409,7 @@
   "Could not delete review strategy. Try again.": "Не вдалося видалити стратегію повторень. Спробуйте ще раз.",
   "Choose a server folder": "Вибрати папку на сервері",
   "Browse folders on the server and choose a project workspace.": "Перегляньте папки на сервері та виберіть робочий простір проєкту.",
+"Browse folders on the server and choose the folder to link.": "Перегляньте папки на сервері та виберіть папку для прив'язки.",
   "Select this folder": "Вибрати цю папку",
   "Parent folder": "Батьківська папка",
   "Current folder": "Поточна папка",

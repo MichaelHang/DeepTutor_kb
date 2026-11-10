@@ -68,6 +68,26 @@ def test_workspace_folder_picker_browses_only_configured_server_roots(
     assert not (root / "outputs").exists()
 
 
+def test_source_scope_browses_document_source_roots(
+    workspace_api, tmp_path: Path, monkeypatch
+) -> None:
+    client, _ = workspace_api
+    source_root = tmp_path / "materials"
+    (source_root / "地理").mkdir(parents=True)
+    monkeypatch.setenv("DEEPTUTOR_LINK_FOLDER_ROOTS", str(source_root))
+
+    response = client.get("/api/settings/workspace/folders", params={"scope": "source"})
+    assert response.status_code == 200
+    assert response.json()["path"] == str(source_root)
+    assert response.json()["folders"] == [{"name": "地理", "path": str(source_root / "地理")}]
+
+
+def test_unknown_folder_scope_is_rejected(workspace_api) -> None:
+    client, _ = workspace_api
+    response = client.get("/api/settings/workspace/folders", params={"scope": "everything"})
+    assert response.status_code == 400
+
+
 def test_workspace_settings_select_and_reset(workspace_api, tmp_path: Path) -> None:
     client, service = workspace_api
     custom = tmp_path / "learning-materials"
