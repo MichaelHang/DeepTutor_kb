@@ -68,6 +68,7 @@ import type { AnswerModeProps, PartnerLinkProps } from "./AnswerModeMenu";
 import type { LeadToken } from "./ComposerLead";
 import { modeIcon } from "./ComposerIcons";
 import type { ComposerResourceCatalog } from "@/hooks/useComposerResources";
+import { useWorkspaceMounts } from "@/hooks/useWorkspaceMounts";
 import type { ResourceSelection } from "@/features/chat/ChatStateAdapter";
 import { CREATE_KINDS, isCreationKind } from "@/lib/creations";
 
@@ -498,6 +499,7 @@ export default memo(function ChatComposer({
   const capabilityLabel = useCapabilityLabel();
   const { value: pageCustomization } = usePageCustomization();
   const controls = customizable ? pageCustomization.chat.controls : undefined;
+  const workspaceMounts = useWorkspaceMounts(workspaceId);
   const capabilities = customizable ? allCapabilities.filter(cap => !pageCustomization.chat.hidden_modes.includes(cap.value)) : allCapabilities;
   // The modern layout picks the mode in the tray and writes it at the start
   // of the message; the classic one keeps its chip in the toolbar.
@@ -1663,6 +1665,11 @@ export default memo(function ChatComposer({
                 : undefined
             }
             create={trayCreate}
+            mounts={{
+              mounts: workspaceMounts.mounts,
+              onChange: workspaceMounts.save,
+              load: workspaceMounts.load,
+            }}
             partners={partnerLinks}
             answer={answerMode}
             end={trayEnd}

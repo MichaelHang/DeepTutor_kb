@@ -6368,7 +6368,7 @@
   "Could not delete review strategy. Try again.": "Không thể xóa chiến lược ôn tập. Hãy thử lại.",
   "Choose a server folder": "Chọn thư mục trên máy chủ",
   "Browse folders on the server and choose a project workspace.": "Duyệt các thư mục trên máy chủ và chọn một không gian làm việc cho dự án.",
-"Browse folders on the server and choose the folder to link.": "Duyệt các thư mục trên máy chủ và chọn thư mục cần liên kết.",
+  "Browse folders on the server and choose the folder to link.": "Duyệt các thư mục trên máy chủ và chọn thư mục cần liên kết.",
   "Select this folder": "Chọn thư mục này",
   "Parent folder": "Thư mục cha",
   "Current folder": "Thư mục hiện tại",
@@ -6596,5 +6596,12 @@
   "This index version is left over from an earlier rebuild and is not serving retrieval. Deleting it frees its disk space.": "Phiên bản chỉ mục này còn sót lại từ lần xây dựng trước và không phục vụ truy xuất. Xóa nó sẽ giải phóng dung lượng đĩa.",
   "Unlink and delete documents": "Hủy liên kết và xóa tài liệu",
   "Unlink this folder?": "Hủy liên kết thư mục này?",
-  "Unlinking…": "Đang hủy liên kết…"
+  "Unlinking…": "Đang hủy liên kết…",
+  "Mounted folders": "Thư mục đã gắn",
+  "Mount a folder": "Gắn một thư mục",
+  "Remove folder": "Gỡ thư mục",
+  "This folder is no longer available.": "Thư mục này không còn khả dụng.",
+  "Mounted folders are read-only: the agent reads them under the name given here, and its own files still go into outputs/.": "Các thư mục đã gắn chỉ đọc: tác nhân đọc chúng dưới tên được đặt ở đây, và tệp của chính nó vẫn nằm trong outputs/.",
+  "Browse folders on the server and choose the folder to mount.": "Duyệt các thư mục trên máy chủ và chọn thư mục cần gắn.",
+  "composer.tray.noFolders": "Chưa gắn thư mục nào"
 }

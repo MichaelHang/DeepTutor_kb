@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import errno
 import hashlib
 import json
+import logging
 import mimetypes
 import os
 from pathlib import Path, PurePosixPath
@@ -24,6 +25,8 @@ from deeptutor.services.settings.interface_settings import atomic_update
 from deeptutor.services.workspace.catalog import WorkspaceCatalogMixin
 from deeptutor.services.workspace.models import WorkspaceBinding, WorkspaceError, WorkspaceItem
 from deeptutor.utils.secret_files import ensure_private_directory
+
+logger = logging.getLogger(__name__)
 
 _SETTINGS_VERSION = 1
 _SETTINGS_NAME = "content_workspace"
@@ -312,6 +315,7 @@ class ContentWorkspaceService(WorkspaceCatalogMixin):
         turn_id: str,
         workspace_id: str | None = None,
         instructions: str | None = None,
+        session_mounts: Any = None,
     ) -> WorkspaceRuntimeContext:
         self.assert_available()
         binding = (
@@ -345,7 +349,44 @@ class ContentWorkspaceService(WorkspaceCatalogMixin):
                 if instructions is None
                 else instructions
             ),
+            mounts=self.effective_mounts(binding, session_mounts),
         )
+
+    def effective_mounts(self, binding: WorkspaceBinding, session_mounts: Any = None) -> tuple:
+        """The read-only folders this turn may read.
+
+        The workspace's own mounts come first; a session may add or replace
+        one by name, which is how a conversation points at a different folder
+        without touching the workspace.
+        """
+        from deeptutor.services.workspace.mounts import mounts_to_runtime, parse_mounts
+
+        merged = {mount.name: mount for mount in self.workspace_mounts(binding.workspace_id)}
+        if session_mounts:
+            try:
+                for mount in parse_mounts(session_mounts, skip_unavailable=True):
+                    merged[mount.name] = mount
+            except WorkspaceError:
+                logger.warning(
+                    "Ignoring malformed session mounts for workspace %s", binding.workspace_id
+                )
+        return tuple(mounts_to_runtime(merged.values()))
+
+    def session_mounts(self, workspace_id: str, raw: Any) -> list[dict[str, Any]]:
+        """The mounts a conversation added on top of its workspace.
+
+        A mount whose folder has gone away is dropped: the conversation keeps
+        running with the folders that still exist.
+        """
+        from deeptutor.services.workspace.mounts import parse_mounts
+
+        if not raw:
+            return []
+        try:
+            return [mount.runtime_dict() for mount in parse_mounts(raw, skip_unavailable=True)]
+        except WorkspaceError:
+            logger.warning("Ignoring malformed session mounts for workspace %s", workspace_id)
+            return []
 
     def resolve(
         self, binding: WorkspaceBinding, relative_path: str, *, write: bool = False
@@ -367,6 +408,61 @@ class ContentWorkspaceService(WorkspaceCatalogMixin):
         except ValueError as exc:
             raise WorkspaceError("The path is outside the selected workspace.") from exc
         return PurePosixPath(*relative.parts).as_posix()
+
+    @staticmethod
+    def _mount_map(mounts: Any) -> dict[str, Any]:
+        """Index the mounts of one turn by their logical name.
+
+        A mount may arrive as a stored definition (``{"name": ..., "path":
+        ...}``) or as a resolved :class:`WorkspaceMount`, so both are
+        accepted here: the tools hand over the runtime form, while a caller
+        reading the registry hands over the stored one.
+        """
+        if not mounts:
+            return {}
+        if isinstance(mounts, dict):
+            return mounts
+        from deeptutor.services.workspace.mounts import mount_map, parse_mounts
+
+        items = list(mounts)
+        if items and isinstance(items[0], dict):
+            try:
+                items = parse_mounts(items, skip_unavailable=True)
+            except WorkspaceError:
+                return {}
+        return mount_map(items)
+
+    @staticmethod
+    def _split_mount(mounts: dict[str, Any], logical: str) -> tuple[Any, str] | None:
+        """Split ``name/rest`` into the mount it addresses and the path inside it."""
+        parts = PurePosixPath(logical).parts
+        if not parts:
+            return None
+        mount = mounts.get(parts[0])
+        if mount is None:
+            return None
+        return mount, "/".join(parts[1:])
+
+    @staticmethod
+    def _resolve_in_mount(mount: Any, rest: str) -> Path:
+        """Resolve a path inside a mount without leaving it."""
+        if not rest:
+            return mount.path
+        candidate = (mount.path / Path(*PurePosixPath(rest).parts)).resolve()
+        try:
+            candidate.relative_to(mount.path)
+        except ValueError as exc:
+            raise WorkspaceError("The path leaves the mounted folder.") from exc
+        cursor = mount.path
+        for part in PurePosixPath(rest).parts:
+            cursor /= part
+            if cursor.is_symlink():
+                raise WorkspaceError("A mounted path cannot contain symbolic links.")
+        return candidate
+
+    def _mount_logical_path(self, mount: Any, candidate: Path) -> str:
+        """The logical path of a file inside a mount."""
+        return mount.logical_path(candidate)
 
     @staticmethod
     def _assert_no_symlink_components(
@@ -409,13 +505,17 @@ class ContentWorkspaceService(WorkspaceCatalogMixin):
 
     @staticmethod
     def _walk_workspace(
-        binding: WorkspaceBinding,
+        root: Path,
         base: Path,
         *,
         max_depth: int | None,
         max_entries: int,
     ) -> tuple[list[Path], bool]:
-        """Walk without following symlinks and stop at a hard scan budget."""
+        """Walk without following symlinks and stop at a hard scan budget.
+
+        ``root`` is the tree the walk may not leave: the workspace root, or a
+        mounted folder.
+        """
 
         budget = max(1, int(max_entries))
         queue: deque[tuple[Path, int]] = deque([(base, 0)])
@@ -433,7 +533,7 @@ class ContentWorkspaceService(WorkspaceCatalogMixin):
                         continue
                     candidate = Path(entry.path)
                     try:
-                        candidate.resolve().relative_to(binding.root)
+                        candidate.resolve().relative_to(root)
                         is_dir = entry.is_dir(follow_symlinks=False)
                     except (OSError, ValueError):
                         continue
@@ -454,35 +554,70 @@ class ContentWorkspaceService(WorkspaceCatalogMixin):
         *,
         depth: int = 1,
         limit: int = 200,
+        mounts: Any = None,
     ) -> dict[str, Any]:
-        """Return bounded directory rows plus explicit scan status."""
+        """Return bounded directory rows plus explicit scan status.
 
+        A mounted folder is reached under its own name, so the workspace root
+        lists the mounts next to its own folders.
+        """
+
+        mount_map = self._mount_map(mounts)
         if (
             path not in {"", "."}
             and _INTERNAL_DIR in PurePosixPath(_normalise_relative(path)).parts
         ):
             raise WorkspaceError("DeepTutor's internal workspace files are not listable.")
-        base = binding.root if path in {"", "."} else self.resolve(binding, path)
-        if not base.is_dir():
-            raise WorkspaceError("The requested workspace path is not a directory.")
         max_depth = max(1, min(int(depth), 5))
         max_items = max(1, min(int(limit), 1000))
+        mount_rows: list[dict[str, Any]] = []
+        if path in {"", "."}:
+            base = binding.root
+            root = binding.root
+            mount = None
+            for name, candidate in sorted(mount_map.items()):
+                mount_rows.append(
+                    {
+                        "path": name,
+                        "name": name,
+                        "kind": "mount",
+                        "size_bytes": None,
+                        "modified_at": None,
+                    }
+                )
+        else:
+            logical = _normalise_relative(path)
+            split = self._split_mount(mount_map, logical)
+            mount = split[0] if split else None
+            rest = split[1] if split else ""
+            if mount is not None:
+                base = self._resolve_in_mount(mount, rest)
+                root = mount.path
+            else:
+                base = self.resolve(binding, logical)
+                root = binding.root
+        if not base.is_dir():
+            raise WorkspaceError("The requested workspace path is not a directory.")
         candidates, truncated = self._walk_workspace(
-            binding,
+            root,
             base,
             max_depth=max_depth,
             max_entries=max_items,
         )
-        rows: list[dict[str, Any]] = []
+        rows: list[dict[str, Any]] = list(mount_rows)
         for candidate in candidates:
             try:
                 stat = candidate.stat()
                 is_dir = candidate.is_dir()
             except OSError:
                 continue
+            if mount is not None:
+                logical_path = self._mount_logical_path(mount, candidate)
+            else:
+                logical_path = self.relative_path(binding, candidate)
             rows.append(
                 {
-                    "path": self.relative_path(binding, candidate),
+                    "path": logical_path,
                     "name": candidate.name,
                     "kind": "directory" if is_dir else "file",
                     "size_bytes": stat.st_size if not is_dir else None,
@@ -502,12 +637,14 @@ class ContentWorkspaceService(WorkspaceCatalogMixin):
         *,
         depth: int = 1,
         limit: int = 200,
+        mounts: Any = None,
     ) -> list[dict[str, Any]]:
         page = self.list_entries_page(
             binding,
             path,
             depth=depth,
             limit=limit,
+            mounts=mounts,
         )
         return list(page["entries"])
 
@@ -518,8 +655,18 @@ class ContentWorkspaceService(WorkspaceCatalogMixin):
         *,
         offset: int = 0,
         limit: int = 20_000,
+        mounts: Any = None,
     ) -> dict[str, Any]:
-        candidate = self.resolve(binding, path)
+        mount_map = self._mount_map(mounts)
+        logical = _normalise_relative(path)
+        split = self._split_mount(mount_map, logical)
+        if split is not None:
+            mount, rest = split
+            candidate = self._resolve_in_mount(mount, rest)
+            reported = mount.logical_path(candidate)
+        else:
+            candidate = self.resolve(binding, logical)
+            reported = logical
         if not candidate.is_file():
             raise WorkspaceError("The requested workspace path is not a file.")
         if _INTERNAL_DIR in PurePosixPath(_normalise_relative(path)).parts:
@@ -543,7 +690,7 @@ class ContentWorkspaceService(WorkspaceCatalogMixin):
         except (OSError, UnicodeDecodeError) as exc:
             raise WorkspaceError("This file could not be read as UTF-8 text.") from exc
         return {
-            "path": self.relative_path(binding, candidate),
+            "path": reported,
             "content": page,
             "offset": start,
             "truncated": skipped + len(page) < total,
@@ -557,8 +704,11 @@ class ContentWorkspaceService(WorkspaceCatalogMixin):
         *,
         path: str = ".",
         limit: int = 50,
+        mounts: Any = None,
     ) -> list[dict[str, Any]]:
-        return list(self.search_page(binding, query, path=path, limit=limit)["matches"])
+        return list(
+            self.search_page(binding, query, path=path, limit=limit, mounts=mounts)["matches"]
+        )
 
     def search_page(
         self,
@@ -567,6 +717,7 @@ class ContentWorkspaceService(WorkspaceCatalogMixin):
         *,
         path: str = ".",
         limit: int = 50,
+        mounts: Any = None,
     ) -> dict[str, Any]:
         """Search within a hard traversal budget and report partial results."""
 
@@ -578,43 +729,82 @@ class ContentWorkspaceService(WorkspaceCatalogMixin):
             and _INTERNAL_DIR in PurePosixPath(_normalise_relative(path)).parts
         ):
             raise WorkspaceError("DeepTutor's internal workspace files are not searchable.")
-        base = binding.root if path in {"", "."} else self.resolve(binding, path)
-        if not base.is_dir():
-            raise WorkspaceError("The requested workspace path is not a directory.")
+        mount_map = self._mount_map(mounts)
+        mount = None
+        if path in {"", "."}:
+            # A search from the root covers the workspace and every mounted
+            # folder: the mounted files live under their mount name, so they
+            # are part of what this conversation may reach.
+            scans: list[tuple[Path, Path, Any]] = [(binding.root, binding.root, None)]
+            scans.extend(
+                (candidate.path, candidate.path, candidate)
+                for _, candidate in sorted(mount_map.items())
+            )
+        else:
+            logical = _normalise_relative(path)
+            split = self._split_mount(mount_map, logical)
+            mount = split[0] if split else None
+            rest = split[1] if split else ""
+            if mount is not None:
+                base = self._resolve_in_mount(mount, rest)
+                root = mount.path
+            else:
+                base = self.resolve(binding, logical)
+                root = binding.root
+            scans = [(root, base, mount)]
         rows: list[dict[str, Any]] = []
         lowered = needle.lower()
         max_matches = max(1, min(int(limit), 200))
-        candidates, traversal_truncated = self._walk_workspace(
-            binding,
-            base,
-            max_depth=None,
-            max_entries=_MAX_SEARCH_SCAN_ENTRIES,
-        )
         scanned_entries = 0
         stopped_for_matches = False
-        for candidate in candidates:
-            scanned_entries += 1
-            if not candidate.is_file():
+        traversal_truncated = False
+        for root, base, mount in scans:
+            if not base.is_dir():
                 continue
-            try:
-                relative = self.relative_path(binding, candidate)
-                size = candidate.stat().st_size
-            except (OSError, WorkspaceError):
-                continue
-            if lowered in candidate.name.lower():
-                rows.append({"path": relative, "line": None, "preview": candidate.name})
-            elif size <= 2_000_000:
+            # The budget covers the whole search, not each tree: sixteen
+            # mounted folders must not turn one search into sixteen scans.
+            remaining = _MAX_SEARCH_SCAN_ENTRIES - scanned_entries
+            if remaining <= 0:
+                traversal_truncated = True
+                break
+            candidates, truncated = self._walk_workspace(
+                root,
+                base,
+                max_depth=None,
+                max_entries=remaining,
+            )
+            traversal_truncated = traversal_truncated or truncated
+            for candidate in candidates:
+                scanned_entries += 1
+                if not candidate.is_file():
+                    continue
                 try:
-                    for line_no, line in enumerate(
-                        candidate.read_text(encoding="utf-8").splitlines(), start=1
-                    ):
-                        if lowered in line.lower():
-                            rows.append({"path": relative, "line": line_no, "preview": line[:500]})
-                            break
-                except (OSError, UnicodeDecodeError):
-                    pass
-            if len(rows) >= max_matches:
-                stopped_for_matches = scanned_entries < len(candidates)
+                    relative = (
+                        self._mount_logical_path(mount, candidate)
+                        if mount is not None
+                        else self.relative_path(binding, candidate)
+                    )
+                    size = candidate.stat().st_size
+                except (OSError, WorkspaceError):
+                    continue
+                if lowered in candidate.name.lower():
+                    rows.append({"path": relative, "line": None, "preview": candidate.name})
+                elif size <= 2_000_000:
+                    try:
+                        for line_no, line in enumerate(
+                            candidate.read_text(encoding="utf-8").splitlines(), start=1
+                        ):
+                            if lowered in line.lower():
+                                rows.append(
+                                    {"path": relative, "line": line_no, "preview": line[:500]}
+                                )
+                                break
+                    except (OSError, UnicodeDecodeError):
+                        pass
+                if len(rows) >= max_matches:
+                    stopped_for_matches = scanned_entries < len(candidates)
+                    break
+            if stopped_for_matches:
                 break
         return {
             "matches": rows,
@@ -626,15 +816,24 @@ class ContentWorkspaceService(WorkspaceCatalogMixin):
         self,
         binding: WorkspaceBinding,
         items: Iterable[Mapping[str, Any]],
+        *,
+        mounts: Any = None,
     ) -> list[WorkspaceItem]:
         from deeptutor.services.workspace.context import current_workspace_id, workspace_url
 
+        mount_map = self._mount_map(mounts)
         prepared: list[tuple[Mapping[str, Any], str, Path]] = []
         for raw in items:
             relative = _normalise_relative(str(raw.get("path") or ""))
             if _INTERNAL_DIR in PurePosixPath(relative).parts:
                 raise WorkspaceError("DeepTutor's internal workspace files cannot be presented.")
-            source = self.resolve(binding, relative)
+            split = self._split_mount(mount_map, relative)
+            if split is not None:
+                mount, rest = split
+                source = self._resolve_in_mount(mount, rest)
+                relative = mount.logical_path(source)
+            else:
+                source = self.resolve(binding, relative)
             if not source.is_file():
                 raise WorkspaceError(f"Workspace item is not a file: {relative}")
             prepared.append((raw, relative, source))
@@ -704,6 +903,7 @@ class ContentWorkspaceService(WorkspaceCatalogMixin):
         source_path: str,
         destination_path: str,
         overwrite: bool = False,
+        mounts: Any = None,
     ) -> dict[str, Any]:
         """Validate one exact outputs → workspace copy without mutating state."""
         source_relative = _normalise_relative(source_path)
@@ -714,6 +914,8 @@ class ContentWorkspaceService(WorkspaceCatalogMixin):
             raise WorkspaceError("Files already under outputs do not need export authorization.")
         if _INTERNAL_DIR in PurePosixPath(destination_relative).parts:
             raise WorkspaceError("DeepTutor's internal workspace files cannot be overwritten.")
+        if mounts and self._split_mount(self._mount_map(mounts), destination_relative):
+            raise WorkspaceError("A mounted folder is read-only and cannot be written to.")
         self._assert_no_symlink_components(
             binding, destination_relative, operation="export destination"
         )
@@ -744,6 +946,7 @@ class ContentWorkspaceService(WorkspaceCatalogMixin):
         destination_path: str,
         overwrite: bool = False,
         expected_sha256: str = "",
+        mounts: Any = None,
     ) -> dict[str, Any]:
         """Perform one previously approved, exact copy inside the workspace."""
         request = self.validate_export(
@@ -751,6 +954,7 @@ class ContentWorkspaceService(WorkspaceCatalogMixin):
             source_path=source_path,
             destination_path=destination_path,
             overwrite=overwrite,
+            mounts=mounts,
         )
         if expected_sha256 and request["sha256"] != expected_sha256:
             raise WorkspaceError("The export source changed after authorization was requested.")

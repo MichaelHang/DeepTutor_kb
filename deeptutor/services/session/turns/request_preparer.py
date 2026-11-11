@@ -278,6 +278,11 @@ class TurnRequestPreparer:
             payload["_workspace_instructions"] = workspace_service.workspace_instructions(
                 binding.workspace_id
             )
+            # A conversation may point at extra read-only folders without
+            # changing the workspace every other conversation shares.
+            payload["_workspace_session_mounts"] = workspace_service.session_mounts(
+                binding.workspace_id, preferences.get("workspace_mounts")
+            )
 
         legacy_watching = (
             payload.get("workspace_mode") == "immersive_watching"

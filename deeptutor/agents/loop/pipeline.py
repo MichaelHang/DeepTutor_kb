@@ -1399,6 +1399,7 @@ class AgenticLoopPipeline:
                 destination_path=str(request.get("destination_path") or ""),
                 overwrite=bool(request.get("overwrite", False)),
                 expected_sha256=str(request.get("sha256") or ""),
+                mounts=list(workspace.mounts),
             )
         except (OSError, ValueError) as exc:
             return f"[workspace export failed: {exc}]"

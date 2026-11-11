@@ -3771,6 +3771,20 @@
             ],
             "title": "Instructions"
           },
+          "mounts": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/WorkspaceMountPayload"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mounts"
+          },
           "name": {
             "maxLength": 100,
             "minLength": 1,
@@ -11372,6 +11386,28 @@
         "title": "SessionTaskLinks",
         "type": "object"
       },
+      "SessionWorkspaceMount": {
+        "description": "One read-only folder a conversation may read through a logical name.",
+        "properties": {
+          "name": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "path": {
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "path"
+        ],
+        "title": "SessionWorkspaceMount",
+        "type": "object"
+      },
       "SetRoleRequest": {
         "description": "Payload for the PUT /users/{username}/role endpoint.",
         "properties": {
@@ -14394,6 +14430,20 @@
             ],
             "title": "Instructions"
           },
+          "mounts": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/WorkspaceMountPayload"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mounts"
+          },
           "name": {
             "anyOf": [
               {
@@ -15283,6 +15333,42 @@
           "path"
         ],
         "title": "WorkspaceMigrationPayload",
+        "type": "object"
+      },
+      "WorkspaceMountPayload": {
+        "description": "One folder the agent may read through a logical name.",
+        "properties": {
+          "name": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "path": {
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "path"
+        ],
+        "title": "WorkspaceMountPayload",
+        "type": "object"
+      },
+      "WorkspaceMountsRequest": {
+        "description": "The folders this conversation may read, replacing its current set.",
+        "properties": {
+          "mounts": {
+            "items": {
+              "$ref": "#/components/schemas/SessionWorkspaceMount"
+            },
+            "title": "Mounts",
+            "type": "array"
+          }
+        },
+        "title": "WorkspaceMountsRequest",
         "type": "object"
       },
       "WorkspacePathPayload": {
@@ -54101,6 +54187,89 @@
         ]
       }
     },
+    "/api/sessions/{session_id}/workspace-mounts": {
+      "put": {
+        "description": "Point one conversation at extra read-only folders.\n\nThe mounts live in the session preferences, so they outlive a reload and\napply to the next turn without changing the workspace every other\nconversation shares.",
+        "operationId": "update_workspace_mounts_api_sessions__session_id__workspace_mounts_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "dt_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dt Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceMountsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Workspace Mounts",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
     "/api/settings": {
       "get": {
         "operationId": "get_settings_api_settings_get",
@@ -60838,7 +61007,7 @@
     },
     "/api/settings/workspace/folders": {
       "get": {
-        "description": "Return folders available to the authenticated folder picker.\n\n``workspace`` lists the folders a workspace root may be taken from.\n``source`` lists the folders a knowledge base may link its documents\nfrom — a read-only source, not a place the agent may write.",
+        "description": "Return folders available to the authenticated folder picker.\n\n``workspace`` lists the folders a workspace root may be taken from.\n``source`` lists the folders a knowledge base may link its documents\nfrom — a read-only source, not a place the agent may write.\n``mount`` lists the folders an agent may read through a logical name.",
         "operationId": "list_server_folders_api_settings_workspace_folders_get",
         "parameters": [
           {

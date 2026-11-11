@@ -3,14 +3,16 @@
 import Link from "next/link";
 import { m, type MotionStyle } from "framer-motion";
 import { createElement, useEffect, useId, useMemo, useState, type ReactNode } from "react";
-import { ArrowUpRight, PencilRuler, Plug, Plus, Shapes, UserRound, Wand2 } from "lucide-react";
+import { ArrowUpRight, Folder, PencilRuler, Plug, Plus, Shapes, UserRound, Wand2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { SPACE_MCP_SURFACE, loadMcpSurface } from "@/components/mcp/surface";
 import { mcpRowStatus, type McpServerStatus, type McpStoreState } from "@/lib/mcp-api";
 import type { ComposerResourceCatalog } from "@/hooks/useComposerResources";
+import { mountNameFromFolder, uniqueMountName } from "@/hooks/useWorkspaceMounts";
 import type { ResourceSelection } from "@/features/chat/ChatStateAdapter";
-import type { WorkspaceResourceOption } from "@/lib/workspaces-api";
+import dynamic from "next/dynamic";
+import type { ServerFolder, WorkspaceMount, WorkspaceResourceOption } from "@/lib/workspaces-api";
 import type { CapabilityDef } from "@/features/capabilities/presentation";
 import { useCapabilityLabel } from "@/features/ui-layout/tokens";
 import {
@@ -27,6 +29,13 @@ import { ConnectorHubIcon, SkillDeckIcon, modeIcon } from "./ComposerIcons";
 import type { ComposerControls } from "@/lib/page-customization";
 import { useTrayFold } from "./ComposerTrayFold";
 import { CREATE_KINDS, CREATION_KIND_ORDER, type CreationKind } from "@/lib/creations";
+
+// The folder browser is only needed when the user mounts something, so it
+// stays out of the chat bundle until then.
+const ServerFolderPicker = dynamic(
+  () => import("@/components/workspaces/ServerFolderPicker").then((module) => module.ServerFolderPicker),
+  { ssr: false },
+);
 
 const STATUS_DOT: Record<McpServerStatus, string> = {
   connected: "bg-emerald-500",
@@ -109,6 +118,21 @@ export interface TrayCreate {
 }
 
 /**
+ * The folders the conversation may read.
+ *
+ * A mount is a read-only view of a folder on disk: the agent reaches it
+ * under a short name, and anything it writes still belongs to the
+ * workspace. The tray lists what is mounted and hands over to the server
+ * folder browser for anything more.
+ */
+export interface TrayMounts {
+  mounts: WorkspaceMount[];
+  onChange: (mounts: { name: string; path: string }[]) => void | Promise<void>;
+  /** Called when the list opens, so the folders are fetched only if wanted. */
+  load?: () => void | Promise<void>;
+}
+
+/**
  * The layer under the composer: how Dito works this turn, what it can reach
  * in this conversation, and who answers.
  *
@@ -133,6 +157,7 @@ export function ComposerTray({
   mode,
   resources,
   create,
+  mounts,
   partners,
   answer,
   end,
@@ -143,6 +168,7 @@ export function ComposerTray({
   mode?: TrayMode;
   resources?: TrayResources;
   create?: TrayCreate;
+  mounts?: TrayMounts;
   partners?: PartnerLinkProps;
   answer?: AnswerModeProps;
   /** A surface's own control for the far end, where who answers sits. */
@@ -181,6 +207,7 @@ export function ComposerTray({
         {resources && controls?.skills !== false && <SkillsMenu {...resources} placement={placement} />}
         {resources && controls?.mcp !== false && <ConnectorsMenu {...resources} placement={placement} />}
         {create && controls?.create !== false && <CreateMenu {...create} placement={placement} />}
+        {mounts && controls?.mounts !== false && <FoldersMenu {...mounts} placement={placement} />}
         {partners && controls?.partners !== false && <PartnerLinkMenu {...partners} placement={placement} />}
         {answer && controls?.preferences !== false && <AnswerModeMenu {...answer} placement={placement} />}
         {end}
@@ -395,6 +422,120 @@ function ConnectorsMenu({ catalog, selection, onChange, placement }: TrayResourc
         </>
       )}
     </TrayMenu>
+  );
+}
+
+/**
+ * The folders this conversation may read.
+ *
+ * The list is what is mounted; a row removes it. Adding one hands over to
+ * the server folder browser, because the folder lives on the server and the
+ * browser is what knows where it is.
+ */
+function FoldersMenu({ mounts, onChange, load, placement }: TrayMounts & { placement: TrayPlacement }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const [browsing, setBrowsing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const count = mounts.length;
+  const drafts = (rows: WorkspaceMount[]) => rows.map((mount) => ({ name: mount.name, path: mount.path }));
+
+  // The list is fetched when it opens: most conversations never ask about
+  // folders, and a request nobody made is a request nobody waits for.
+  useEffect(() => {
+    if (open) void load?.();
+  }, [open, load]);
+
+  const add = async (folder: ServerFolder) => {
+    setBusy(true);
+    setError("");
+    try {
+      const name = uniqueMountName(
+        mountNameFromFolder(folder.name),
+        mounts.map((mount) => mount.name),
+      );
+      await onChange([...drafts(mounts), { name, path: folder.path }]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      throw err;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (name: string) => {
+    setBusy(true);
+    setError("");
+    try {
+      await onChange(drafts(mounts.filter((mount) => mount.name !== name)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <TrayMenu
+        icon={<Folder size={14} strokeWidth={1.7} className="shrink-0" />}
+        label={t("Folders")}
+        value={count ? t("composer.tray.referenced", { count }) : undefined}
+        active={count > 0}
+        fold
+        placement={placement}
+        open={open}
+        onOpenChange={setOpen}
+      >
+        {(close) => (
+          <>
+            <TrayList label={t("Mounted folders")}>
+              {mounts.map((mount) => (
+                <TrayOption
+                  key={`${mount.path}-${mount.name}`}
+                  selected={false}
+                  disabled={busy}
+                  onSelect={() => {
+                    void remove(mount.name);
+                    close();
+                  }}
+                  leading={<Folder size={14} strokeWidth={1.7} />}
+                  title={mount.name}
+                  meta={mount.path}
+                />
+              ))}
+              {!mounts.length && <p className="dt-tray-empty">{t("composer.tray.noFolders")}</p>}
+            </TrayList>
+            {error && (
+              <p role="alert" className="dt-tray-empty text-[var(--destructive)]">
+                {error}
+              </p>
+            )}
+            <TrayFoot>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  close();
+                  setBrowsing(true);
+                }}
+              >
+                <Plus size={13} strokeWidth={1.9} />
+                {t("Mount a folder")}
+              </button>
+            </TrayFoot>
+          </>
+        )}
+      </TrayMenu>
+      {browsing && (
+        <ServerFolderPicker
+          scope="mount"
+          onClose={() => setBrowsing(false)}
+          onSelect={folder => add(folder)}
+        />
+      )}
+    </>
   );
 }
 

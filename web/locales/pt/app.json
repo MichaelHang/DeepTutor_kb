@@ -6368,7 +6368,7 @@
   "Could not delete review strategy. Try again.": "Não foi possível excluir a estratégia de revisão. Tente novamente.",
   "Choose a server folder": "Escolha uma pasta do servidor",
   "Browse folders on the server and choose a project workspace.": "Navegue pelas pastas do servidor e escolha um espaço de trabalho de projeto.",
-"Browse folders on the server and choose the folder to link.": "Navegue pelas pastas do servidor e escolha a pasta para vincular.",
+  "Browse folders on the server and choose the folder to link.": "Navegue pelas pastas do servidor e escolha a pasta para vincular.",
   "Select this folder": "Selecionar esta pasta",
   "Parent folder": "Pasta superior",
   "Current folder": "Pasta atual",
@@ -6614,5 +6614,12 @@
   "This index version is left over from an earlier rebuild and is not serving retrieval. Deleting it frees its disk space.": "Esta versão do índice sobrou de uma reconstrução anterior e não está a servir a recuperação. Eliminá-la liberta o espaço em disco.",
   "Unlink and delete documents": "Desvincular e eliminar documentos",
   "Unlink this folder?": "Desvincular esta pasta?",
-  "Unlinking…": "A desvincular…"
+  "Unlinking…": "A desvincular…",
+  "Mounted folders": "Pastas montadas",
+  "Mount a folder": "Montar uma pasta",
+  "Remove folder": "Remover pasta",
+  "This folder is no longer available.": "Esta pasta já não está disponível.",
+  "Mounted folders are read-only: the agent reads them under the name given here, and its own files still go into outputs/.": "As pastas montadas são somente leitura: o agente as lê pelo nome informado aqui, e os próprios arquivos dele continuam indo para outputs/.",
+  "Browse folders on the server and choose the folder to mount.": "Navegue pelas pastas do servidor e escolha a pasta a montar.",
+  "composer.tray.noFolders": "Nenhuma pasta montada"
 }

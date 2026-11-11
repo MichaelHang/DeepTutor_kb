@@ -33,6 +33,8 @@ export function getWorkspaceResources(workspaceId = ''): Promise<WorkspaceResour
 export interface ChatWorkspaceRegistration {
   instructions?: string
   resources?: WorkspaceResources
+  /** Read-only folders the agent may read through a logical name. */
+  mounts?: WorkspaceMount[]
   workspace_id: string
   kind: 'system' | 'general' | 'workspace'
   follows_root: boolean
@@ -64,8 +66,24 @@ export interface ServerFolderListing extends ServerFolder {
  * `workspace` lists the folders a workspace root may be taken from.
  * `source` lists the folders a knowledge base may link its documents from —
  * a read-only source, not a place the agent may write.
+ * `mount` lists the folders an agent may read through a logical name.
  */
-export type ServerFolderScope = 'workspace' | 'source'
+export type ServerFolderScope = 'workspace' | 'source' | 'mount'
+
+/**
+ * One folder mounted into a workspace.
+ *
+ * The path is the folder on the server; the name is the short segment the
+ * agent sees, so `materials/notes.md` is `notes.md` inside the mount
+ * `materials`.
+ */
+export interface WorkspaceMount {
+  name: string
+  path: string
+  read_only?: boolean
+  /** False once the folder is gone; the mount is kept but cannot be read. */
+  available?: boolean
+}
 
 export function browseServerFolders(
   path = '',
@@ -95,7 +113,14 @@ export function listWorkspaces(force = false): Promise<ChatWorkspaceRegistration
 }
 
 export async function saveWorkspace(
-  input: { name?: string; path?: string; archived?: boolean; resources?: WorkspaceResources; instructions?: string },
+  input: {
+    name?: string
+    path?: string
+    archived?: boolean
+    resources?: WorkspaceResources
+    instructions?: string
+    mounts?: { name: string; path: string }[]
+  },
   workspaceId?: string
 ): Promise<ChatWorkspaceRegistration> {
   const result = await request<{ workspace: ChatWorkspaceRegistration }>(
@@ -167,6 +192,23 @@ export async function migrateWorkspace(
 
 export function getSystemWorkspaceSnapshot(): Promise<SystemWorkspaceSnapshot> {
   return request<SystemWorkspaceSnapshot>(`${endpoint}/system-snapshot`, { method: 'POST' })
+}
+
+/**
+ * The folders one conversation may read on top of its workspace's own.
+ *
+ * A session mount is scoped to that conversation, so it survives a reload
+ * without changing the workspace every other conversation shares.
+ */
+export async function saveSessionMounts(
+  sessionId: string,
+  mounts: { name: string; path: string }[],
+): Promise<{ workspace_mounts: { name: string; path: string }[] }> {
+  return request(`/api/sessions/${encodeURIComponent(sessionId)}/workspace-mounts`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mounts }),
+  })
 }
 
 export function workspaceLabel(

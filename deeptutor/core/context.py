@@ -45,6 +45,10 @@ class WorkspaceRuntimeContext:
     logical_output_dir: str = "outputs"
     security_level: str = "off"
     instructions: str = ""
+    #: Read-only folders the user mounted for this turn. Each entry is
+    #: ``{"name": ..., "path": ...}``; the name is the only part the model
+    #: ever sees.
+    mounts: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass

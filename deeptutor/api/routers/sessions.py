@@ -795,6 +795,45 @@ async def update_branch_selection(session_id: str, payload: BranchSelectionReque
     return {"selected_branches": payload.selected_branches}
 
 
+class SessionWorkspaceMount(BaseModel):
+    """One read-only folder a conversation may read through a logical name."""
+
+    name: str = Field(min_length=1, max_length=64)
+    path: str = Field(min_length=1)
+
+
+class WorkspaceMountsRequest(BaseModel):
+    """The folders this conversation may read, replacing its current set."""
+
+    mounts: list[SessionWorkspaceMount] = Field(default_factory=list)
+
+
+@router.put("/{session_id}/workspace-mounts")
+async def update_workspace_mounts(session_id: str, payload: WorkspaceMountsRequest):
+    """Point one conversation at extra read-only folders.
+
+    The mounts live in the session preferences, so they outlive a reload and
+    apply to the next turn without changing the workspace every other
+    conversation shares.
+    """
+    from deeptutor.services.workspace.models import WorkspaceError
+    from deeptutor.services.workspace.mounts import parse_mounts
+
+    store = get_sqlite_session_store()
+    session = await store.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    try:
+        mounts = parse_mounts([mount.model_dump() for mount in payload.mounts])
+    except WorkspaceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    rows = [{"name": mount.name, "path": str(mount.path)} for mount in mounts]
+    updated = await store.update_session_preferences(session_id, {"workspace_mounts": rows})
+    if not updated:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"workspace_mounts": rows}
+
+
 @router.delete("/{session_id}/messages/{message_id}")
 async def delete_turn_by_message(session_id: str, message_id: int):
     store = get_sqlite_session_store()

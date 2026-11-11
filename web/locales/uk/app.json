@@ -6409,7 +6409,7 @@
   "Could not delete review strategy. Try again.": "Не вдалося видалити стратегію повторень. Спробуйте ще раз.",
   "Choose a server folder": "Вибрати папку на сервері",
   "Browse folders on the server and choose a project workspace.": "Перегляньте папки на сервері та виберіть робочий простір проєкту.",
-"Browse folders on the server and choose the folder to link.": "Перегляньте папки на сервері та виберіть папку для прив'язки.",
+  "Browse folders on the server and choose the folder to link.": "Перегляньте папки на сервері та виберіть папку для прив'язки.",
   "Select this folder": "Вибрати цю папку",
   "Parent folder": "Батьківська папка",
   "Current folder": "Поточна папка",
@@ -6618,5 +6618,12 @@
   "This index version is left over from an earlier rebuild and is not serving retrieval. Deleting it frees its disk space.": "Ця версія індексу лишилася від попередньої перебудови та не використовується для пошуку. Її видалення звільнить місце на диску.",
   "Unlink and delete documents": "Відв'язати та видалити документи",
   "Unlink this folder?": "Відв'язати цю теку?",
-  "Unlinking…": "Відв'язування…"
+  "Unlinking…": "Відв'язування…",
+  "Mounted folders": "Змонтовані теки",
+  "Mount a folder": "Змонтувати теку",
+  "Remove folder": "Вилучити теку",
+  "This folder is no longer available.": "Ця тека більше недоступна.",
+  "Mounted folders are read-only: the agent reads them under the name given here, and its own files still go into outputs/.": "Змонтовані теки доступні лише для читання: агент читає їх під назвою, вказаною тут, а власні файли потрапляють до outputs/.",
+  "Browse folders on the server and choose the folder to mount.": "Перегляньте теки на сервері та виберіть теку для монтування.",
+  "composer.tray.noFolders": "Немає змонтованих тек"
 }

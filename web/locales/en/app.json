@@ -6500,7 +6500,7 @@
   "Could not delete review strategy. Try again.": "Could not delete review strategy. Try again.",
   "Choose a server folder": "Choose a server folder",
   "Browse folders on the server and choose a project workspace.": "Browse folders on the server and choose a project workspace.",
-"Browse folders on the server and choose the folder to link.": "Browse folders on the server and choose the folder to link.",
+  "Browse folders on the server and choose the folder to link.": "Browse folders on the server and choose the folder to link.",
   "Select this folder": "Select this folder",
   "Parent folder": "Parent folder",
   "Current folder": "Current folder",
@@ -6596,5 +6596,12 @@
   "This index version is left over from an earlier rebuild and is not serving retrieval. Deleting it frees its disk space.": "This index version is left over from an earlier rebuild and is not serving retrieval. Deleting it frees its disk space.",
   "Unlink and delete documents": "Unlink and delete documents",
   "Unlink this folder?": "Unlink this folder?",
-  "Unlinking…": "Unlinking…"
+  "Unlinking…": "Unlinking…",
+  "Mounted folders": "Mounted folders",
+  "Mount a folder": "Mount a folder",
+  "Remove folder": "Remove folder",
+  "This folder is no longer available.": "This folder is no longer available.",
+  "Mounted folders are read-only: the agent reads them under the name given here, and its own files still go into outputs/.": "Mounted folders are read-only: the agent reads them under the name given here, and its own files still go into outputs/.",
+  "Browse folders on the server and choose the folder to mount.": "Browse folders on the server and choose the folder to mount.",
+  "composer.tray.noFolders": "No folders mounted"
 }

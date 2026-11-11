@@ -6387,7 +6387,7 @@
   "Could not delete review strategy. Try again.": "Die Wiederholungsstrategie konnte nicht gelöscht werden. Versuche es erneut.",
   "Choose a server folder": "Serverordner auswählen",
   "Browse folders on the server and choose a project workspace.": "Durchsuche Ordner auf dem Server und wähle einen Projektarbeitsbereich.",
-"Browse folders on the server and choose the folder to link.": "Durchsuche Ordner auf dem Server und wähle den Ordner aus, den du verknüpfen möchtest.",
+  "Browse folders on the server and choose the folder to link.": "Durchsuche Ordner auf dem Server und wähle den Ordner aus, den du verknüpfen möchtest.",
   "Select this folder": "Diesen Ordner auswählen",
   "Parent folder": "Übergeordneter Ordner",
   "Current folder": "Aktueller Ordner",
@@ -6596,5 +6596,12 @@
   "This index version is left over from an earlier rebuild and is not serving retrieval. Deleting it frees its disk space.": "Diese Indexversion stammt aus einem früheren Rebuild und wird nicht für die Suche verwendet. Das Löschen gibt ihren Speicherplatz frei.",
   "Unlink and delete documents": "Verknüpfung aufheben und Dokumente löschen",
   "Unlink this folder?": "Diesen Ordner-Verknüpfung aufheben?",
-  "Unlinking…": "Verknüpfung wird aufgehoben…"
+  "Unlinking…": "Verknüpfung wird aufgehoben…",
+  "Mounted folders": "Eingebundene Ordner",
+  "Mount a folder": "Ordner einbinden",
+  "Remove folder": "Ordner entfernen",
+  "This folder is no longer available.": "Dieser Ordner ist nicht mehr verfügbar.",
+  "Mounted folders are read-only: the agent reads them under the name given here, and its own files still go into outputs/.": "Eingebundene Ordner sind schreibgeschützt: Der Agent liest sie unter dem hier angegebenen Namen, und seine eigenen Dateien landen weiterhin in outputs/.",
+  "Browse folders on the server and choose the folder to mount.": "Ordner auf dem Server durchsuchen und den einzubindenden Ordner auswählen.",
+  "composer.tray.noFolders": "Keine Ordner eingebunden"
 }

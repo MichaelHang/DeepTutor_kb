@@ -1,5 +1,5 @@
 {
-  "fingerprint": "2dae2223223b8b231a0b243881ca17327ef9600fd849777f952e33e641137bd2",
+  "fingerprint": "4198538d0734c695e1c8d7729a4a4a723e2e306cfd00bcfd8e708142c9c7d7eb",
   "routers": {
     "deeptutor.api.routers.auth:router": [
       {
@@ -3244,6 +3244,14 @@
       {
         "path": "/{session_id}/branch-selection",
         "name": "update_branch_selection",
+        "kind": "http",
+        "methods": [
+          "PUT"
+        ]
+      },
+      {
+        "path": "/{session_id}/workspace-mounts",
+        "name": "update_workspace_mounts",
         "kind": "http",
         "methods": [
           "PUT"

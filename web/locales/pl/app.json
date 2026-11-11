@@ -6409,7 +6409,7 @@
   "Could not delete review strategy. Try again.": "Nie udało się usunąć strategii powtórek. Spróbuj ponownie.",
   "Choose a server folder": "Wybierz folder na serwerze",
   "Browse folders on the server and choose a project workspace.": "Przeglądaj foldery na serwerze i wybierz obszar roboczy projektu.",
-"Browse folders on the server and choose the folder to link.": "Przeglądaj foldery na serwerze i wybierz folder do powiązania.",
+  "Browse folders on the server and choose the folder to link.": "Przeglądaj foldery na serwerze i wybierz folder do powiązania.",
   "Select this folder": "Wybierz ten folder",
   "Parent folder": "Folder nadrzędny",
   "Current folder": "Bieżący folder",
@@ -6618,5 +6618,12 @@
   "This index version is left over from an earlier rebuild and is not serving retrieval. Deleting it frees its disk space.": "Ta wersja indeksu pochodzi z wcześniejszego przebudowania i nie służy do wyszukiwania. Jej usunięcie zwolni zajmowane miejsce na dysku.",
   "Unlink and delete documents": "Odłącz i usuń dokumenty",
   "Unlink this folder?": "Odłączyć ten folder?",
-  "Unlinking…": "Odłączanie…"
+  "Unlinking…": "Odłączanie…",
+  "Mounted folders": "Zamontowane foldery",
+  "Mount a folder": "Zamontuj folder",
+  "Remove folder": "Usuń folder",
+  "This folder is no longer available.": "Ten folder nie jest już dostępny.",
+  "Mounted folders are read-only: the agent reads them under the name given here, and its own files still go into outputs/.": "Zamontowane foldery są tylko do odczytu: agent czyta je pod podaną tutaj nazwą, a własne pliki nadal trafiają do outputs/.",
+  "Browse folders on the server and choose the folder to mount.": "Przeglądaj foldery na serwerze i wybierz folder do zamontowania.",
+  "composer.tray.noFolders": "Brak zamontowanych folderów"
 }

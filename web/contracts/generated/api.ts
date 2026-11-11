@@ -8209,6 +8209,30 @@ export interface paths {
     readonly patch?: never;
     readonly trace?: never;
   };
+  readonly "/api/sessions/{session_id}/workspace-mounts": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    readonly get?: never;
+    /**
+     * Update Workspace Mounts
+     * @description Point one conversation at extra read-only folders.
+     *
+     *     The mounts live in the session preferences, so they outlive a reload and
+     *     apply to the next turn without changing the workspace every other
+     *     conversation shares.
+     */
+    readonly put: operations["update_workspace_mounts_api_sessions__session_id__workspace_mounts_put"];
+    readonly post?: never;
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
   readonly "/api/sessions/capabilities": {
     readonly parameters: {
       readonly query?: never;
@@ -9891,6 +9915,7 @@ export interface paths {
      *     ``workspace`` lists the folders a workspace root may be taken from.
      *     ``source`` lists the folders a knowledge base may link its documents
      *     from — a read-only source, not a place the agent may write.
+     *     ``mount`` lists the folders an agent may read through a logical name.
      */
     readonly get: operations["list_server_folders_api_settings_workspace_folders_get"];
     readonly put?: never;
@@ -13543,6 +13568,9 @@ export interface components {
     readonly CreateWorkspacePayload: {
       /** Instructions */
       readonly instructions?: string | null;
+      /** Mounts */
+      readonly mounts?:
+        readonly components["schemas"]["WorkspaceMountPayload"][] | null;
       /** Name */
       readonly name: string;
       /** Path */
@@ -17057,6 +17085,16 @@ export interface components {
       readonly workspace_id: string;
     };
     /**
+     * SessionWorkspaceMount
+     * @description One read-only folder a conversation may read through a logical name.
+     */
+    readonly SessionWorkspaceMount: {
+      /** Name */
+      readonly name: string;
+      /** Path */
+      readonly path: string;
+    };
+    /**
      * SetRoleRequest
      * @description Payload for the PUT /users/{username}/role endpoint.
      */
@@ -18257,6 +18295,9 @@ export interface components {
       readonly archived?: boolean | null;
       /** Instructions */
       readonly instructions?: string | null;
+      /** Mounts */
+      readonly mounts?:
+        readonly components["schemas"]["WorkspaceMountPayload"][] | null;
       /** Name */
       readonly name?: string | null;
       readonly resources?: components["schemas"]["WorkspaceResources"] | null;
@@ -18741,6 +18782,24 @@ export interface components {
     readonly WorkspaceMigrationPayload: {
       /** Path */
       readonly path: string;
+    };
+    /**
+     * WorkspaceMountPayload
+     * @description One folder the agent may read through a logical name.
+     */
+    readonly WorkspaceMountPayload: {
+      /** Name */
+      readonly name: string;
+      /** Path */
+      readonly path: string;
+    };
+    /**
+     * WorkspaceMountsRequest
+     * @description The folders this conversation may read, replacing its current set.
+     */
+    readonly WorkspaceMountsRequest: {
+      /** Mounts */
+      readonly mounts?: readonly components["schemas"]["SessionWorkspaceMount"][];
     };
     /** WorkspacePathPayload */
     readonly WorkspacePathPayload: {
@@ -19308,6 +19367,8 @@ export type SchemaSessionStoreCapabilities =
   components["schemas"]["SessionStoreCapabilities"];
 export type SchemaSessionSummary = components["schemas"]["SessionSummary"];
 export type SchemaSessionTaskLinks = components["schemas"]["SessionTaskLinks"];
+export type SchemaSessionWorkspaceMount =
+  components["schemas"]["SessionWorkspaceMount"];
 export type SchemaSetRoleRequest = components["schemas"]["SetRoleRequest"];
 export type SchemaSetSessionModeRequest =
   components["schemas"]["SetSessionModeRequest"];
@@ -19439,6 +19500,10 @@ export type SchemaWorkspaceMaterialRequest =
   components["schemas"]["WorkspaceMaterialRequest"];
 export type SchemaWorkspaceMigrationPayload =
   components["schemas"]["WorkspaceMigrationPayload"];
+export type SchemaWorkspaceMountPayload =
+  components["schemas"]["WorkspaceMountPayload"];
+export type SchemaWorkspaceMountsRequest =
+  components["schemas"]["WorkspaceMountsRequest"];
 export type SchemaWorkspacePathPayload =
   components["schemas"]["WorkspacePathPayload"];
 export type SchemaWorkspaceReorderRequest =
@@ -37780,6 +37845,45 @@ export interface operations {
       };
     };
     readonly requestBody?: never;
+    readonly responses: {
+      /** @description Successful Response */
+      readonly 200: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": unknown;
+        };
+      };
+      /** @description Validation Error */
+      readonly 422: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  readonly update_workspace_mounts_api_sessions__session_id__workspace_mounts_put: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: {
+        readonly Authorization?: string | null;
+      };
+      readonly path: {
+        readonly session_id: string;
+      };
+      readonly cookie?: {
+        readonly dt_token?: string | null;
+      };
+    };
+    readonly requestBody: {
+      readonly content: {
+        readonly "application/json": components["schemas"]["WorkspaceMountsRequest"];
+      };
+    };
     readonly responses: {
       /** @description Successful Response */
       readonly 200: {

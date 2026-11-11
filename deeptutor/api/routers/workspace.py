@@ -34,10 +34,16 @@ async def list_server_folders(path: str = "", scope: str = "workspace") -> dict:
     ``workspace`` lists the folders a workspace root may be taken from.
     ``source`` lists the folders a knowledge base may link its documents
     from — a read-only source, not a place the agent may write.
+    ``mount`` lists the folders an agent may read through a logical name.
     """
-    from deeptutor.services.workspace.folders import SOURCE_SCOPE, WORKSPACE_SCOPE, browse_folders
+    from deeptutor.services.workspace.folders import (
+        MOUNT_SCOPE,
+        SOURCE_SCOPE,
+        WORKSPACE_SCOPE,
+        browse_folders,
+    )
 
-    if scope not in {WORKSPACE_SCOPE, SOURCE_SCOPE}:
+    if scope not in {WORKSPACE_SCOPE, SOURCE_SCOPE, MOUNT_SCOPE}:
         raise HTTPException(status_code=400, detail="Unknown folder scope.")
     try:
         return await asyncio.to_thread(browse_folders, get_content_workspace_service(), path, scope)
@@ -49,11 +55,19 @@ class WorkspacePathPayload(BaseModel):
     path: str | None = None
 
 
+class WorkspaceMountPayload(BaseModel):
+    """One folder the agent may read through a logical name."""
+
+    name: str = Field(min_length=1, max_length=64)
+    path: str = Field(min_length=1)
+
+
 class CreateWorkspacePayload(BaseModel):
     instructions: str | None = Field(default=None, max_length=MAX_WORKSPACE_INSTRUCTIONS_CHARS)
     resources: WorkspaceResources | None = None
     name: str = Field(min_length=1, max_length=100)
     path: str | None = None
+    mounts: list[WorkspaceMountPayload] | None = None
 
 
 class UpdateWorkspacePayload(BaseModel):
@@ -61,6 +75,7 @@ class UpdateWorkspacePayload(BaseModel):
     resources: WorkspaceResources | None = None
     name: str | None = Field(default=None, min_length=1, max_length=100)
     archived: bool | None = None
+    mounts: list[WorkspaceMountPayload] | None = None
 
 
 class DataMigrationPayload(BaseModel):
@@ -269,6 +284,7 @@ async def create_workspace(payload: CreateWorkspacePayload) -> dict:
             payload.path,
             resources=payload.resources.model_dump() if payload.resources else None,
             instructions=payload.instructions,
+            mounts=payload.model_dump(exclude_unset=True).get("mounts"),
         )
     except WorkspaceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

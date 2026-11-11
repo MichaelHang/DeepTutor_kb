@@ -6351,7 +6351,7 @@
   "Could not delete review strategy. Try again.": "Tekrar stratejisi silinemedi. Yeniden deneyin.",
   "Choose a server folder": "Sunucuda bir klasör seçin",
   "Browse folders on the server and choose a project workspace.": "Sunucudaki klasörlere göz atın ve bir proje çalışma alanı seçin.",
-"Browse folders on the server and choose the folder to link.": "Sunucudaki klasörlerde gezinin ve bağlanacak klasörü seçin.",
+  "Browse folders on the server and choose the folder to link.": "Sunucudaki klasörlerde gezinin ve bağlanacak klasörü seçin.",
   "Select this folder": "Bu klasörü seç",
   "Parent folder": "Üst klasör",
   "Current folder": "Geçerli klasör",
@@ -6596,5 +6596,12 @@
   "This index version is left over from an earlier rebuild and is not serving retrieval. Deleting it frees its disk space.": "Bu dizin sürümü önceki bir yeniden oluşturmadan kaldı ve retrieve işlevini beslemiyor. Silmek disk alanını boşaltır.",
   "Unlink and delete documents": "Bağlantıyı kaldır ve belgeleri sil",
   "Unlink this folder?": "Bu klasörün bağlantısı kaldırılsın mı?",
-  "Unlinking…": "Bağlantı kaldırılıyor…"
+  "Unlinking…": "Bağlantı kaldırılıyor…",
+  "Mounted folders": "Bağlanan klasörler",
+  "Mount a folder": "Bir klasör bağla",
+  "Remove folder": "Klasörü kaldır",
+  "This folder is no longer available.": "Bu klasör artık kullanılamıyor.",
+  "Mounted folders are read-only: the agent reads them under the name given here, and its own files still go into outputs/.": "Bağlanan klasörler salt okunurdur: ajan bunları burada verilen adla okur, kendi dosyaları hâlâ outputs/ içine gider.",
+  "Browse folders on the server and choose the folder to mount.": "Sunucudaki klasörlere göz atın ve bağlanacak klasörü seçin.",
+  "composer.tray.noFolders": "Bağlı klasör yok"
 }

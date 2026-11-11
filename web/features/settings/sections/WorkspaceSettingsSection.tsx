@@ -4,15 +4,16 @@ import Tooltip from "@/shared/ui/Tooltip";
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
-import { Archive, ArchiveRestore, FileText, Folder, FolderInput, Globe2, Pencil, Plus, Settings2 } from 'lucide-react'
+import { Archive, ArchiveRestore, FileText, Folder, FolderInput, FolderPlus, Globe2, Pencil, Plus, Settings2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { SettingSection, SettingsPageHeader, inputClass, subPanelClass } from '@/components/settings/shared'
 import { WorkspaceResourcePicker } from '@/components/workspaces/WorkspaceResourcePicker'
 import { WorkspaceInstructionsField } from '@/components/workspaces/WorkspaceInstructionsField'
+import { WorkspaceMountsEditor } from '@/components/workspaces/WorkspaceMountsEditor'
 import { SystemWorkspaceSnapshot } from '@/components/workspaces/SystemWorkspaceSnapshot'
 import {
   getWorkspaceCatalog, saveWorkspace, migrateWorkspace, workspaceChatHref, inheritedWorkspaceResources,
-  type WorkspaceCatalog, type ChatWorkspaceRegistration,
+  type WorkspaceCatalog, type ChatWorkspaceRegistration, type WorkspaceMount,
 } from '@/lib/workspaces-api'
 
 type RunAction = (action: () => Promise<unknown>) => Promise<boolean>
@@ -23,6 +24,8 @@ const primaryClass = 'inline-flex items-center justify-center gap-1.5 rounded-lg
 function WorkspaceRow({ row, run, busy }: { row: ChatWorkspaceRegistration; run: RunAction; busy: boolean }) {
   const { t } = useTranslation()
   const [resourcesOpen, setResourcesOpen] = useState(false)
+  const [mountsOpen, setMountsOpen] = useState(false)
+  const [mounts, setMounts] = useState<WorkspaceMount[]>(row.mounts ?? [])
   const [instructionsOpen, setInstructionsOpen] = useState(false)
   const [instructions, setInstructions] = useState(row.instructions ?? '')
   const [resources, setResources] = useState(row.resources ?? inheritedWorkspaceResources())
@@ -46,6 +49,7 @@ function WorkspaceRow({ row, run, busy }: { row: ChatWorkspaceRegistration; run:
             </Link>
           )}
           {row.kind !== 'system' && !row.archived && <button type="button" className={actionClass} onClick={() => { setResources(row.resources ?? inheritedWorkspaceResources()); setResourcesOpen(!resourcesOpen) }}><Settings2 size={14} />{t('Assigned resources')}</button>}
+          {row.kind !== 'system' && !row.archived && <button type="button" className={actionClass} aria-expanded={mountsOpen} onClick={() => { setMounts(row.mounts ?? []); setMountsOpen(!mountsOpen) }}><FolderPlus size={14} />{t('Mounted folders')}</button>}
           {row.kind !== 'system' && !row.archived && <button type="button" className={actionClass} aria-expanded={instructionsOpen} onClick={() => { setInstructions(row.instructions ?? ''); setInstructionsOpen(!instructionsOpen) }}><FileText size={14} />{t('Workspace instructions')}</button>}
           {custom && <Tooltip label={t('Rename workspace')} side="top">
             <button type="button" className={actionClass} aria-label={t('Rename workspace')} onClick={() => { setName(row.display_name); setEditing(!editing); setMoving(false) }}><Pencil size={14} /></button>
@@ -66,6 +70,12 @@ function WorkspaceRow({ row, run, busy }: { row: ChatWorkspaceRegistration; run:
           <form className={`${subPanelClass} mt-3 space-y-3 p-4`} onSubmit={async event => { event.preventDefault(); if (await run(() => saveWorkspace({ instructions }, row.workspace_id))) setInstructionsOpen(false) }}>
             <WorkspaceInstructionsField value={instructions} onChange={setInstructions} />
             <div className="flex gap-2"><button type="submit" className={primaryClass}>{t('Save')}</button><button type="button" className={actionClass} onClick={() => setInstructionsOpen(false)}>{t('Cancel')}</button></div>
+          </form>
+        )}
+        {mountsOpen && (
+          <form className={`${subPanelClass} mt-3 space-y-3 p-4`} onSubmit={async event => { event.preventDefault(); if (await run(() => saveWorkspace({ mounts: mounts.map(mount => ({ name: mount.name, path: mount.path })) }, row.workspace_id))) setMountsOpen(false) }}>
+            <WorkspaceMountsEditor mounts={mounts} onChange={setMounts} />
+            <div className="flex gap-2"><button type="submit" className={primaryClass}>{t('Save')}</button><button type="button" className={actionClass} onClick={() => setMountsOpen(false)}>{t('Cancel')}</button></div>
           </form>
         )}
         {resourcesOpen && (

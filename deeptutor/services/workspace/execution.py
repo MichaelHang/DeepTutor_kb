@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path, PurePosixPath
 
@@ -40,6 +41,7 @@ def prepare_workspace_execution_env(
     turn_output_dir: str | Path,
     *,
     workspace_root: str | Path | None = None,
+    mounts: dict[str, str] | None = None,
 ) -> dict[str, str]:
     """Return one shared execution environment for a turn.
 
@@ -109,6 +111,13 @@ def prepare_workspace_execution_env(
         # an existing binary workspace file. Prompts teach the model to append
         # an exact workspace-relative path and never reveal the physical value.
         env["DEEPTUTOR_WORKSPACE_ROOT"] = str(Path(workspace_root).expanduser().resolve())
+    if mounts:
+        # The same handle for the folders the user mounted: the model reads
+        # the logical mount name and joins it with the exact relative path a
+        # workspace tool returned, without ever revealing the physical value.
+        env["DEEPTUTOR_WORKSPACE_MOUNTS"] = json.dumps(
+            {name: str(path) for name, path in mounts.items()}, ensure_ascii=False
+        )
     return env
 
 

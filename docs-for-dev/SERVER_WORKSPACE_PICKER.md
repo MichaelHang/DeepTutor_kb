@@ -22,6 +22,23 @@ Linking only records where the documents live — nothing is imported until
 **Sync now** is pressed. The linked folder is a read-only source: the agent may
 read the documents it provides, but it never writes into the folder.
 
+## Mount a folder for the agent to read
+
+A workspace can mount a local folder so the agent may read it. In the composer's
+**Folders** menu, choose **Mount a folder**, walk down to the folder you want and
+choose **Select this folder**. **Settings → Workspaces → Mounted folders** manages
+the same list.
+
+A mount is a read-only view: the folder keeps its own place on disk, and the agent
+reaches it under the short name given to the mount — `materials/geo/notes.md` is
+`notes.md` inside the mount `materials`. The agent never writes into a mounted
+folder; its own output still belongs in the workspace's `outputs/`.
+
+The host path never reaches the model: it sees the mount name only. When code run
+through `exec` must open a file inside a mount, it joins the mount name from the
+`DEEPTUTOR_WORKSPACE_MOUNTS` environment variable with the exact relative path a
+workspace tool returned, and never prints that variable's value.
+
 ## Deployment
 
 The picker browses the filesystem of the backend, rather than the computer
@@ -47,9 +64,14 @@ the backend platform's path separator. This scope is read-only as well:
 linking records where the documents live and does not give the agent a place
 to write.
 
+The mounted-folder picker browses the same roots as the knowledge base picker,
+because a mounted folder is read from the server just like a linked document
+source. The same `DEEPTUTOR_LINK_FOLDER_ROOTS` setting therefore names the
+folders that may be mounted.
+
 The picker shows accessible non-hidden subdirectories and omits symlinks that
 resolve outside the current root. Each directory scan is bounded to 10,000
 entries and returns at most 500 folders. Filtering applies to the displayed
 directory, not recursively to the whole project tree. The API is
-`GET /api/settings/workspace/folders?path=...&scope=workspace|source` and
+`GET /api/settings/workspace/folders?path=...&scope=workspace|source|mount` and
 inherits settings authentication.

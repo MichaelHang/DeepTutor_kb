@@ -15,6 +15,8 @@ export interface ComposerControls {
   /** Optional: absent (older saved customizations, or the backend schema
    *  before this control existed) behaves as `true`. */
   create?: boolean
+  /** The folder list under the composer. Optional for the same reason. */
+  mounts?: boolean
 }
 export interface ChatPageCustomization {
   hidden_modes: string[]

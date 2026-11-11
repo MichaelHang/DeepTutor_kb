@@ -58,6 +58,9 @@ def bind_workspace_tool_runtime(
     if tool_name.startswith("workspace_") and workspace is not None:
         kwargs["_workspace_id"] = workspace.workspace_id
         kwargs["_language"] = context.language or "en"
+        # The read-only folders the user mounted for this turn. The host path
+        # stays in the runtime; the tools only report the logical name.
+        kwargs["_workspace_mounts"] = [dict(mount) for mount in workspace.mounts]
 
     if tool_name in {"exec"} or tool_name.startswith(CLI_APP_TOOL_PREFIX):
         from deeptutor.services.sandbox import Mount
@@ -77,9 +80,19 @@ def bind_workspace_tool_runtime(
         if tool_name == "exec":
             kwargs["_sandbox_code_workdir"] = str(workdir)
             kwargs["_sandbox_source_dir"] = str(state_dir / "exec_calls")
+        mounted = (
+            {
+                str(mount.get("name") or ""): str(mount.get("path") or "")
+                for mount in workspace.mounts
+            }
+            if workspace is not None
+            else {}
+        )
+        mounted = {name: path for name, path in mounted.items() if name and path}
         kwargs["_sandbox_env"] = prepare_workspace_execution_env(
             task_dir,
             workspace_root=workspace.root if workspace is not None else None,
+            mounts=mounted,
         )
         mounts = [
             Mount(host_path=str(workdir), sandbox_path=str(workdir), read_only=False),
@@ -94,6 +107,13 @@ def bind_workspace_tool_runtime(
                     read_only=True,
                 ),
             )
+            # Mounted folders join the sandbox read-only, at their own path, so
+            # code can open a mounted binary the same way it opens a workspace
+            # file — through the symbolic handles in the environment.
+            for path in mounted.values():
+                mounts.append(
+                    Mount(host_path=path, sandbox_path=path, read_only=True),
+                )
             kwargs["_workspace_id"] = workspace.workspace_id
             kwargs["_workspace_root"] = workspace.root
         kwargs["_sandbox_mounts"] = tuple(mounts)

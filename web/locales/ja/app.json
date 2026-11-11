@@ -6369,7 +6369,7 @@
   "Could not delete review strategy. Try again.": "復習戦略を削除できませんでした。もう一度お試しください。",
   "Choose a server folder": "サーバー上のフォルダーを選択",
   "Browse folders on the server and choose a project workspace.": "サーバー上のフォルダーを参照して、プロジェクトのワークスペースを選びます。",
-"Browse folders on the server and choose the folder to link.": "サーバー上のフォルダーを参照して、リンクするフォルダーを選びます。",
+  "Browse folders on the server and choose the folder to link.": "サーバー上のフォルダーを参照して、リンクするフォルダーを選びます。",
   "Select this folder": "このフォルダーを選択",
   "Parent folder": "親フォルダー",
   "Current folder": "現在のフォルダー",
@@ -6596,5 +6596,12 @@
   "This index version is left over from an earlier rebuild and is not serving retrieval. Deleting it frees its disk space.": "このインデックスバージョンは以前の再構築に残ったもので、現在は検索に使用されていません。削除するとディスク容量が解放されます。",
   "Unlink and delete documents": "連携を解除してドキュメントを削除",
   "Unlink this folder?": "このフォルダの連携を解除しますか？",
-  "Unlinking…": "連携を解除中…"
+  "Unlinking…": "連携を解除中…",
+  "Mounted folders": "マウントされたフォルダ",
+  "Mount a folder": "フォルダをマウント",
+  "Remove folder": "フォルダを削除",
+  "This folder is no longer available.": "このフォルダは利用できません。",
+  "Mounted folders are read-only: the agent reads them under the name given here, and its own files still go into outputs/.": "マウントされたフォルダは読み取り専用です。エージェントはここで指定した名前で読み取り、生成したファイルは引き続き outputs/ に保存されます。",
+  "Browse folders on the server and choose the folder to mount.": "サーバー上のフォルダを参照し、マウントするフォルダを選択します。",
+  "composer.tray.noFolders": "マウントされたフォルダはありません"
 }

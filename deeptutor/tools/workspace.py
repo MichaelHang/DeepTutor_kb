@@ -8,6 +8,7 @@ from typing import Any
 
 from deeptutor.core.tool_protocol import BaseTool, ToolDefinition, ToolParameter, ToolResult
 from deeptutor.services.workspace import WorkspaceError, get_content_workspace_service
+from deeptutor.services.workspace.mounts import WorkspaceMount, parse_mounts
 
 
 def _binding(kwargs: dict[str, Any]):
@@ -16,6 +17,17 @@ def _binding(kwargs: dict[str, Any]):
     return service, (
         service.binding_by_id(workspace_id) if workspace_id else service.current_binding()
     )
+
+
+def _mounts(kwargs: dict[str, Any]) -> list[WorkspaceMount]:
+    """The read-only folders this turn may read, under their logical names."""
+    raw = kwargs.get("_workspace_mounts")
+    if not raw:
+        return []
+    try:
+        return parse_mounts(raw, skip_unavailable=True)
+    except WorkspaceError:
+        return []
 
 
 def _failure(exc: WorkspaceError) -> ToolResult:
@@ -28,7 +40,8 @@ class WorkspaceListTool(BaseTool):
             name="workspace_list",
             description=(
                 "List files and folders in the user's active workspace using relative paths. "
-                "Use this before claiming that a local file is unavailable."
+                "A folder the user mounted appears at the workspace root under its mount "
+                "name. Use this before claiming that a local file is unavailable."
             ),
             parameters=[
                 ToolParameter(
@@ -61,6 +74,7 @@ class WorkspaceListTool(BaseTool):
                 str(kwargs.get("path") or "."),
                 depth=int(kwargs.get("depth") or 1),
                 limit=int(kwargs.get("limit") or 200),
+                mounts=_mounts(kwargs),
             )
         except WorkspaceError as exc:
             return _failure(exc)
@@ -76,7 +90,8 @@ class WorkspaceReadTool(BaseTool):
             name="workspace_read",
             description=(
                 "Read a UTF-8 text file from the user's active workspace. Paths are relative "
-                "to the workspace; use workspace_list or workspace_search to discover them."
+                "to the workspace; a mounted folder is addressed as '<mount name>/<path "
+                "inside it>'. Use workspace_list or workspace_search to discover them."
             ),
             parameters=[
                 ToolParameter(
@@ -106,6 +121,7 @@ class WorkspaceReadTool(BaseTool):
                 str(kwargs.get("path") or ""),
                 offset=int(kwargs.get("offset") or 0),
                 limit=int(kwargs.get("limit") or 20_000),
+                mounts=_mounts(kwargs),
             )
         except WorkspaceError as exc:
             return _failure(exc)
@@ -117,7 +133,10 @@ class WorkspaceSearchTool(BaseTool):
     def get_definition(self) -> ToolDefinition:
         return ToolDefinition(
             name="workspace_search",
-            description="Search filenames and UTF-8 text inside the user's active workspace.",
+            description=(
+                "Search filenames and UTF-8 text inside the user's active workspace. "
+                "Pass a mount name as the path to search only inside that mounted folder."
+            ),
             parameters=[
                 ToolParameter(name="query", type="string", description="Text to find."),
                 ToolParameter(
@@ -144,6 +163,7 @@ class WorkspaceSearchTool(BaseTool):
                 str(kwargs.get("query") or ""),
                 path=str(kwargs.get("path") or "."),
                 limit=int(kwargs.get("limit") or 50),
+                mounts=_mounts(kwargs),
             )
         except WorkspaceError as exc:
             return _failure(exc)
@@ -201,7 +221,9 @@ class WorkspacePresentTool(BaseTool):
             )
         try:
             service, binding = _binding(kwargs)
-            items = await asyncio.to_thread(service.publish, binding, raw_items)
+            items = await asyncio.to_thread(
+                service.publish, binding, raw_items, mounts=_mounts(kwargs)
+            )
         except WorkspaceError as exc:
             return _failure(exc)
         rows = [item.to_dict() for item in items]
@@ -262,6 +284,7 @@ class WorkspaceExportTool(BaseTool):
                 source_path=str(kwargs.get("source_path") or ""),
                 destination_path=str(kwargs.get("destination_path") or ""),
                 overwrite=bool(kwargs.get("overwrite", False)),
+                mounts=_mounts(kwargs),
             )
         except WorkspaceError as exc:
             return _failure(exc)

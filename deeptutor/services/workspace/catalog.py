@@ -297,9 +297,35 @@ class WorkspaceCatalogMixin:
                     "instructions": row.get("instructions") or "",
                     "resources": row.get("resources")
                     or {"skills": None, "mcp": None, "knowledge_bases": None},
+                    "mounts": self._row_mounts(row),
                 }
             )
         return sorted(result, key=lambda row: {"system": 0, "general": 1}.get(row["kind"], 2))
+
+    @staticmethod
+    def _row_mounts(row: dict[str, Any]) -> list[dict[str, Any]]:
+        """Describe a workspace's mounts to their owner.
+
+        A mount whose folder disappeared is reported as unavailable instead of
+        hiding the rest of the list.
+        """
+        from deeptutor.services.workspace.mounts import describe_mounts
+
+        return describe_mounts(row.get("mounts") or [])
+
+    def workspace_mounts(self, workspace_id: str) -> list:
+        """The folders mounted on one workspace.
+
+        Mounts are read-only views, so they are reported as plain data rather
+        than as workspace bindings. A mount whose folder is gone is dropped
+        instead of breaking the workspace.
+        """
+        from deeptutor.services.workspace.mounts import parse_mounts
+
+        row = next((r for r in self._catalog() if r["workspace_id"] == workspace_id), None)
+        if row is None:
+            return []
+        return parse_mounts(row.get("mounts") or [], skip_unavailable=True)
 
     def create_workspace(
         self,
@@ -308,6 +334,7 @@ class WorkspaceCatalogMixin:
         *,
         resources: dict | None = None,
         instructions: str | None = None,
+        mounts: list | None = None,
     ) -> dict[str, Any]:
         self.assert_available()
         name = name.strip()
@@ -319,6 +346,10 @@ class WorkspaceCatalogMixin:
             from deeptutor.services.workspace.resources import validate_resources
 
             resources = validate_resources(resources)
+        if mounts is not None:
+            from deeptutor.services.workspace.mounts import mounts_to_rows, parse_mounts
+
+            mounts = mounts_to_rows(parse_mounts(mounts))
         workspace_id = f"ws_{uuid.uuid4().hex}"
         root = Path(path).expanduser().resolve() if path else self._managed_root() / workspace_id
         self._assert_allowed_root(root)
@@ -327,6 +358,9 @@ class WorkspaceCatalogMixin:
                 raise WorkspaceError("The selected workspace folder does not exist.")
         else:
             ensure_private_directory(root)
+        # A mount is addressed by name, so it may not shadow a folder that
+        # already lives in the workspace root.
+        self._assert_mount_names_free(root, mounts)
         # Reusing a folder must reuse its identity, including legacy artifacts.
         for row in self.list_workspaces():
             if Path(row["path"]).resolve() == root:
@@ -336,6 +370,7 @@ class WorkspaceCatalogMixin:
                     archived=False,
                     resources=resources,
                     instructions=instructions,
+                    mounts=mounts,
                 )
         binding = WorkspaceBinding(workspace_id, root, name)
         self._ensure_ready(binding)
@@ -351,6 +386,7 @@ class WorkspaceCatalogMixin:
                 "created_at": _utc_now(),
                 "resources": resources or {},
                 "instructions": instructions or "",
+                "mounts": mounts or [],
             }
         )
         if saved["kind"] != "workspace":
@@ -367,6 +403,7 @@ class WorkspaceCatalogMixin:
         archived: bool | None = None,
         resources: dict | None = None,
         instructions: str | None = None,
+        mounts: list | None = None,
     ) -> dict[str, Any]:
         self.assert_available()
         if name is not None and (not name.strip() or len(name.strip()) > 100):
@@ -380,6 +417,10 @@ class WorkspaceCatalogMixin:
             resources = validate_resources(
                 resources, previous=previous.get("resources"), workspace_id=workspace_id
             )
+        if mounts is not None:
+            from deeptutor.services.workspace.mounts import mounts_to_rows, parse_mounts
+
+            mounts = mounts_to_rows(parse_mounts(mounts))
         with self._catalog_connection() as conn:
             conn.execute("BEGIN IMMEDIATE")
             record = conn.execute(
@@ -394,6 +435,9 @@ class WorkspaceCatalogMixin:
                 raise WorkspaceError("Workspace not found.")
             if row["kind"] == "general" and (name is not None or archived is not None):
                 raise WorkspaceError("The default workspace cannot be renamed or archived.")
+            if mounts is not None:
+                self._assert_mount_names_free(Path(row["path"]), mounts)
+                row["mounts"] = mounts
             if resources is not None:
                 row["resources"] = resources
             if instructions is not None:
@@ -407,6 +451,18 @@ class WorkspaceCatalogMixin:
                 (json.dumps(row, ensure_ascii=False), workspace_id),
             )
         return next(row for row in self.list_workspaces() if row["workspace_id"] == workspace_id)
+
+    @staticmethod
+    def _assert_mount_names_free(root: Path, mounts: list | None) -> None:
+        """Keep a mount name from shadowing a folder in the workspace root."""
+        if not mounts:
+            return
+        for mount in mounts or []:
+            name = str(mount.get("name") or "") if isinstance(mount, dict) else ""
+            if name and (root / name).exists():
+                raise WorkspaceError(
+                    f"“{name}” already exists in the workspace root, so it cannot be a mount."
+                )
 
     @staticmethod
     def _validate_instructions(instructions: str) -> str:

@@ -92,7 +92,9 @@ export function ServerFolderPicker({
       description={
         scope === 'source'
           ? t('Browse folders on the server and choose the folder to link.')
-          : t('Browse folders on the server and choose a project workspace.')
+          : scope === 'mount'
+            ? t('Browse folders on the server and choose the folder to mount.')
+            : t('Browse folders on the server and choose a project workspace.')
       }
       footer={
         <>

@@ -15,6 +15,10 @@ WORKSPACE_SCOPE = "workspace"
 #: that folder into a workspace, so its browsing roots are wider than the
 #: workspace policy.
 SOURCE_SCOPE = "source"
+#: The mounted-folder picker: a folder the agent may read through a logical
+#: name. A mount is read-only, so it browses the same roots as a document
+#: source — the difference is what happens to the folder afterwards.
+MOUNT_SCOPE = "mount"
 
 #: Where a document source may be picked from, when the deployment does not
 #: name its own roots.
@@ -73,7 +77,7 @@ def browse_folders(
     service: ContentWorkspaceService, path: str = "", scope: str = WORKSPACE_SCOPE
 ) -> dict:
     """List readable subfolders within the requesting user's browsing roots."""
-    if scope == SOURCE_SCOPE:
+    if scope in {SOURCE_SCOPE, MOUNT_SCOPE}:
         roots = _source_roots(service)
     else:
         configured = os.environ.get("DEEPTUTOR_WORKSPACE_BROWSER_ROOTS", "").strip()
@@ -93,7 +97,7 @@ def browse_folders(
     if not roots:
         raise WorkspaceError(
             "No browsable workspace folders are configured."
-            if scope != SOURCE_SCOPE
+            if scope == WORKSPACE_SCOPE
             else "No browsable folders are configured."
         )
     try:
