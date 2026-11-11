@@ -6603,5 +6603,6 @@
   "This folder is no longer available.": "此文件夹已不可用。",
   "Mounted folders are read-only: the agent reads them under the name given here, and its own files still go into outputs/.": "挂载的文件夹是只读的：智能体按此处给出的名称读取它们，它自己的文件仍然写入 outputs/。",
   "Browse folders on the server and choose the folder to mount.": "浏览服务器上的文件夹，选择要挂载的文件夹。",
-  "composer.tray.noFolders": "未挂载文件夹"
+  "composer.tray.noFolders": "未挂载文件夹",
+  "File too large: {{name}} (max {{limit}})": "文件过大：{{name}}（上限 {{limit}}）"
 }

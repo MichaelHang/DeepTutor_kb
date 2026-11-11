@@ -6603,5 +6603,6 @@
   "This folder is no longer available.": "Thư mục này không còn khả dụng.",
   "Mounted folders are read-only: the agent reads them under the name given here, and its own files still go into outputs/.": "Các thư mục đã gắn chỉ đọc: tác nhân đọc chúng dưới tên được đặt ở đây, và tệp của chính nó vẫn nằm trong outputs/.",
   "Browse folders on the server and choose the folder to mount.": "Duyệt các thư mục trên máy chủ và chọn thư mục cần gắn.",
-  "composer.tray.noFolders": "Chưa gắn thư mục nào"
+  "composer.tray.noFolders": "Chưa gắn thư mục nào",
+  "File too large: {{name}} (max {{limit}})": "Tệp quá lớn: {{name}} (tối đa {{limit}})"
 }

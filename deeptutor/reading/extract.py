@@ -540,19 +540,18 @@ def _shared_extract(source: Path) -> str:
     an attachment works as reading material — and gaining a format there gains
     it here for free. ``max_chars=None`` because the reading store keeps the
     full text on disk; the per-turn budget is enforced later, per unit read.
-    ``max_bytes`` stays at the validator ceiling rather than ``None`` so a
-    pathological upload still fails fast instead of being read into memory.
+    ``max_bytes`` stays at the reading document ceiling rather than ``None``
+    so a pathological upload still fails fast instead of being read into
+    memory.
     """
+    from deeptutor.reading.limits import MAX_DOCUMENT_BYTES
     from deeptutor.utils.document_extractor import (
         DocumentExtractionError,
         extract_text_from_path,
     )
-    from deeptutor.utils.document_validator import DocumentValidator
 
     try:
-        return extract_text_from_path(
-            source, max_bytes=DocumentValidator.MAX_FILE_SIZE, max_chars=None
-        )
+        return extract_text_from_path(source, max_bytes=MAX_DOCUMENT_BYTES, max_chars=None)
     except DocumentExtractionError as exc:
         raise ReadingError(f"{source.name}: {exc}") from exc
     except OSError as exc:

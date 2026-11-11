@@ -61,31 +61,25 @@ from deeptutor.reading.knowledge_capture import (
     organize_workspace_notes,
     send_workspace_to_notebook,
 )
+from deeptutor.reading.limits import (
+    AUDIO_EXTENSIONS,
+    MAX_AUDIO_BYTES,
+    MAX_DOCUMENT_BYTES,
+    MAX_VIDEO_BYTES,
+    MEDIA_EXTENSIONS,
+    VIDEO_EXTENSIONS,
+    material_size_limit,
+)
 from deeptutor.reading.models import MAX_TEXT_SELECTOR_CHARS
 from deeptutor.services.session.workspace_preferences import WORKSPACE_MODE_READING
-from deeptutor.utils.document_validator import DocumentValidator
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Streaming upload ceiling. Same number the extractor enforces, so a file that
-# passes here cannot then be rejected deeper in with a less helpful message.
-MAX_MATERIAL_BYTES = DocumentValidator.MAX_FILE_SIZE
+#: Kept for callers that only care about "is this media".
+MAX_MATERIAL_BYTES = MAX_DOCUMENT_BYTES
 _UPLOAD_CHUNK = 1024 * 1024
-_MEDIA_EXTENSIONS = {
-    ".mp4",
-    ".mov",
-    ".mkv",
-    ".webm",
-    ".m4v",
-    ".mp3",
-    ".m4a",
-    ".wav",
-    ".aac",
-    ".ogg",
-    ".flac",
-}
 
 
 def _store() -> ReadingStore:
@@ -346,7 +340,12 @@ class BookmarkList(BaseModel):
 
 class SupportedFormats(BaseModel):
     extensions: list[str]
+    #: The document ceiling, and the default for anything else.
     max_bytes: int
+    max_audio_bytes: int
+    max_video_bytes: int
+    audio_extensions: list[str]
+    video_extensions: list[str]
     raw_view_extensions: list[str]
 
 
@@ -1015,9 +1014,13 @@ async def supported_formats() -> SupportedFormats:
     from deeptutor.utils.document_extractor import SUPPORTED_DOC_EXTENSIONS
 
     return SupportedFormats(
-        extensions=sorted(set(SUPPORTED_DOC_EXTENSIONS) | _MEDIA_EXTENSIONS),
-        max_bytes=MAX_MATERIAL_BYTES,
-        raw_view_extensions=sorted(set(RAW_VIEW_EXTENSIONS) | _MEDIA_EXTENSIONS),
+        extensions=sorted(set(SUPPORTED_DOC_EXTENSIONS) | MEDIA_EXTENSIONS),
+        max_bytes=MAX_DOCUMENT_BYTES,
+        max_audio_bytes=MAX_AUDIO_BYTES,
+        max_video_bytes=MAX_VIDEO_BYTES,
+        audio_extensions=sorted(AUDIO_EXTENSIONS),
+        video_extensions=sorted(VIDEO_EXTENSIONS),
+        raw_view_extensions=sorted(set(RAW_VIEW_EXTENSIONS) | MEDIA_EXTENSIONS),
     )
 
 
@@ -1064,24 +1067,22 @@ async def upload_material(
     tmp_dir = Path(tempfile.mkdtemp(prefix="dt-reading-"))
     tmp_path = tmp_dir / Path(filename).name
     written = 0
+    limit = material_size_limit(filename)
     try:
         with tmp_path.open("wb") as sink:
             while chunk := await file.read(_UPLOAD_CHUNK):
                 written += len(chunk)
-                if written > MAX_MATERIAL_BYTES:
+                if written > limit:
                     raise HTTPException(
                         status_code=413,
-                        detail=(
-                            f"{filename} exceeds the "
-                            f"{MAX_MATERIAL_BYTES // (1024 * 1024)} MB limit."
-                        ),
+                        detail=(f"{filename} exceeds the {limit // (1024 * 1024)} MB limit."),
                     )
                 sink.write(chunk)
         if written == 0:
             raise HTTPException(status_code=400, detail=f"{filename} is empty.")
 
         store = _store()
-        if Path(filename).suffix.lower() in _MEDIA_EXTENSIONS:
+        if Path(filename).suffix.lower() in MEDIA_EXTENSIONS:
             service = ReadingIngestionService(store, _catalog())
             record = await service.queue_media(tmp_path, filename=filename)
             background_tasks.add_task(service.process_media, record.material_id)
@@ -1585,4 +1586,11 @@ def _attachment_header(filename: str) -> str:
     return f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{quote(filename)}"
 
 
-__all__ = ["MAX_MATERIAL_BYTES", "router"]
+__all__ = [
+    "MAX_AUDIO_BYTES",
+    "MAX_DOCUMENT_BYTES",
+    "MAX_MATERIAL_BYTES",
+    "MAX_VIDEO_BYTES",
+    "material_size_limit",
+    "router",
+]

@@ -17315,12 +17315,20 @@ export interface components {
     };
     /** SupportedFormats */
     readonly SupportedFormats: {
+      /** Audio Extensions */
+      readonly audio_extensions: readonly string[];
       /** Extensions */
       readonly extensions: readonly string[];
+      /** Max Audio Bytes */
+      readonly max_audio_bytes: number;
       /** Max Bytes */
       readonly max_bytes: number;
+      /** Max Video Bytes */
+      readonly max_video_bytes: number;
       /** Raw View Extensions */
       readonly raw_view_extensions: readonly string[];
+      /** Video Extensions */
+      readonly video_extensions: readonly string[];
     };
     /**
      * SyncFolderResponse

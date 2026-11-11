@@ -6603,5 +6603,6 @@
   "This folder is no longer available.": "Dieser Ordner ist nicht mehr verfügbar.",
   "Mounted folders are read-only: the agent reads them under the name given here, and its own files still go into outputs/.": "Eingebundene Ordner sind schreibgeschützt: Der Agent liest sie unter dem hier angegebenen Namen, und seine eigenen Dateien landen weiterhin in outputs/.",
   "Browse folders on the server and choose the folder to mount.": "Ordner auf dem Server durchsuchen und den einzubindenden Ordner auswählen.",
-  "composer.tray.noFolders": "Keine Ordner eingebunden"
+  "composer.tray.noFolders": "Keine Ordner eingebunden",
+  "File too large: {{name}} (max {{limit}})": "Datei zu groß: {{name}} (max. {{limit}})"
 }

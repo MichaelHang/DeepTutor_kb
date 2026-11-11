@@ -6625,5 +6625,6 @@
   "This folder is no longer available.": "Ten folder nie jest już dostępny.",
   "Mounted folders are read-only: the agent reads them under the name given here, and its own files still go into outputs/.": "Zamontowane foldery są tylko do odczytu: agent czyta je pod podaną tutaj nazwą, a własne pliki nadal trafiają do outputs/.",
   "Browse folders on the server and choose the folder to mount.": "Przeglądaj foldery na serwerze i wybierz folder do zamontowania.",
-  "composer.tray.noFolders": "Brak zamontowanych folderów"
+  "composer.tray.noFolders": "Brak zamontowanych folderów",
+  "File too large: {{name}} (max {{limit}})": "Plik jest za duży: {{name}} (maks. {{limit}})"
 }

@@ -6621,5 +6621,6 @@
   "This folder is no longer available.": "Esta pasta já não está disponível.",
   "Mounted folders are read-only: the agent reads them under the name given here, and its own files still go into outputs/.": "As pastas montadas são somente leitura: o agente as lê pelo nome informado aqui, e os próprios arquivos dele continuam indo para outputs/.",
   "Browse folders on the server and choose the folder to mount.": "Navegue pelas pastas do servidor e escolha a pasta a montar.",
-  "composer.tray.noFolders": "Nenhuma pasta montada"
+  "composer.tray.noFolders": "Nenhuma pasta montada",
+  "File too large: {{name}} (max {{limit}})": "Arquivo muito grande: {{name}} (máx. {{limit}})"
 }

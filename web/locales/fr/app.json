@@ -7506,5 +7506,6 @@
   "This folder is no longer available.": "Ce dossier n'est plus disponible.",
   "Mounted folders are read-only: the agent reads them under the name given here, and its own files still go into outputs/.": "Les dossiers montés sont en lecture seule : l'agent les lit sous le nom indiqué ici, et ses propres fichiers restent dans outputs/.",
   "Browse folders on the server and choose the folder to mount.": "Parcourez les dossiers du serveur et choisissez le dossier à monter.",
-  "composer.tray.noFolders": "Aucun dossier monté"
+  "composer.tray.noFolders": "Aucun dossier monté",
+  "File too large: {{name}} (max {{limit}})": "Fichier trop volumineux : {{name}} (max {{limit}})"
 }

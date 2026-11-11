@@ -6603,5 +6603,6 @@
   "This folder is no longer available.": "Bu klasör artık kullanılamıyor.",
   "Mounted folders are read-only: the agent reads them under the name given here, and its own files still go into outputs/.": "Bağlanan klasörler salt okunurdur: ajan bunları burada verilen adla okur, kendi dosyaları hâlâ outputs/ içine gider.",
   "Browse folders on the server and choose the folder to mount.": "Sunucudaki klasörlere göz atın ve bağlanacak klasörü seçin.",
-  "composer.tray.noFolders": "Bağlı klasör yok"
+  "composer.tray.noFolders": "Bağlı klasör yok",
+  "File too large: {{name}} (max {{limit}})": "Dosya çok büyük: {{name}} (en fazla {{limit}})"
 }

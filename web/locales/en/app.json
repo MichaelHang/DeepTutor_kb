@@ -6603,5 +6603,6 @@
   "This folder is no longer available.": "This folder is no longer available.",
   "Mounted folders are read-only: the agent reads them under the name given here, and its own files still go into outputs/.": "Mounted folders are read-only: the agent reads them under the name given here, and its own files still go into outputs/.",
   "Browse folders on the server and choose the folder to mount.": "Browse folders on the server and choose the folder to mount.",
-  "composer.tray.noFolders": "No folders mounted"
+  "composer.tray.noFolders": "No folders mounted",
+  "File too large: {{name}} (max {{limit}})": "File too large: {{name}} (max {{limit}})"
 }

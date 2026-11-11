@@ -6603,5 +6603,6 @@
   "This folder is no longer available.": "このフォルダは利用できません。",
   "Mounted folders are read-only: the agent reads them under the name given here, and its own files still go into outputs/.": "マウントされたフォルダは読み取り専用です。エージェントはここで指定した名前で読み取り、生成したファイルは引き続き outputs/ に保存されます。",
   "Browse folders on the server and choose the folder to mount.": "サーバー上のフォルダを参照し、マウントするフォルダを選択します。",
-  "composer.tray.noFolders": "マウントされたフォルダはありません"
+  "composer.tray.noFolders": "マウントされたフォルダはありません",
+  "File too large: {{name}} (max {{limit}})": "ファイルが大きすぎます: {{name}}（上限 {{limit}}）"
 }

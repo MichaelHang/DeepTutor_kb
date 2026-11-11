@@ -11907,6 +11907,13 @@
       },
       "SupportedFormats": {
         "properties": {
+          "audio_extensions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Audio Extensions",
+            "type": "array"
+          },
           "extensions": {
             "items": {
               "type": "string"
@@ -11914,8 +11921,16 @@
             "title": "Extensions",
             "type": "array"
           },
+          "max_audio_bytes": {
+            "title": "Max Audio Bytes",
+            "type": "integer"
+          },
           "max_bytes": {
             "title": "Max Bytes",
+            "type": "integer"
+          },
+          "max_video_bytes": {
+            "title": "Max Video Bytes",
             "type": "integer"
           },
           "raw_view_extensions": {
@@ -11924,11 +11939,22 @@
             },
             "title": "Raw View Extensions",
             "type": "array"
+          },
+          "video_extensions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Video Extensions",
+            "type": "array"
           }
         },
         "required": [
           "extensions",
           "max_bytes",
+          "max_audio_bytes",
+          "max_video_bytes",
+          "audio_extensions",
+          "video_extensions",
           "raw_view_extensions"
         ],
         "title": "SupportedFormats",

@@ -31,7 +31,7 @@ from deeptutor.reading.catalog_models import (
 from deeptutor.reading.catalog_store import ReadingCatalogStore
 from deeptutor.reading.extract import split_markdown_by_headings
 from deeptutor.reading.models import OutlineEntry, ReadingError, UnitReference
-from deeptutor.reading.store import ReadingStore, content_hash
+from deeptutor.reading.store import ReadingStore, content_hash_file
 from deeptutor.services.web_source.markdown import strip_leading_snapshot_provenance
 from deeptutor.services.web_source.snapshot_assets import (
     ImageFetcher,
@@ -431,13 +431,17 @@ class ReadingIngestionService:
         """
         path = Path(source)
         try:
-            raw = await asyncio.to_thread(path.read_bytes)
+            size = path.stat().st_size
         except OSError as exc:
             raise ReadingError(f"{path.name}: could not be read ({exc})") from exc
-        if not raw:
+        if not size:
             raise ReadingError(f"{path.name} is empty")
         display_name = (filename or path.name).strip() or path.name
-        material_id = content_hash(raw)
+        # Hashed and filed by path: a lecture video is hundreds of megabytes,
+        # and it must not have to fit in memory to be named or stored. The id
+        # is the same one the byte-wise hash gives, so an existing material
+        # keeps its identity.
+        material_id = content_hash_file(path)
         kind, render_mode, mime = _media_identity(display_name)
         duration, cover = await _probe_media(path)
 
@@ -451,7 +455,7 @@ class ReadingIngestionService:
             mime=mime,
             extractor="media-pending",
             render_mode=render_mode,
-            raw_data=raw,
+            raw_path=path,
             assets={MEDIA_COVER_ASSET: cover} if cover else None,
             outline=[OutlineEntry(locator=1, title=_clock(0))],
             unit_refs=[UnitReference(locator=1, source_href="#t=0", title=_clock(0))],

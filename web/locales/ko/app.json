@@ -606,5 +606,6 @@
   "This folder is no longer available.": "이 폴더는 더 이상 사용할 수 없습니다.",
   "Mounted folders are read-only: the agent reads them under the name given here, and its own files still go into outputs/.": "마운트된 폴더는 읽기 전용입니다. 에이전트는 여기서 지정한 이름으로 읽으며, 자체 파일은 계속 outputs/에 저장됩니다.",
   "Browse folders on the server and choose the folder to mount.": "서버의 폴더를 찾아보고 마운트할 폴더를 선택하세요.",
-  "composer.tray.noFolders": "마운트된 폴더 없음"
+  "composer.tray.noFolders": "마운트된 폴더 없음",
+  "File too large: {{name}} (max {{limit}})": "파일이 너무 큽니다: {{name}} (최대 {{limit}})"
 }

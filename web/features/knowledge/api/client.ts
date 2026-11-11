@@ -279,7 +279,7 @@ function normalizeUploadPolicy(data: unknown): KnowledgeUploadPolicy {
     max_file_size_bytes:
       typeof payload?.max_file_size_bytes === "number"
         ? payload.max_file_size_bytes
-        : 200 * 1024 * 1024,
+        : 300 * 1024 * 1024,
   };
 }
 

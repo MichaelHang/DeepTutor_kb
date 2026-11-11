@@ -6625,5 +6625,6 @@
   "This folder is no longer available.": "Ця тека більше недоступна.",
   "Mounted folders are read-only: the agent reads them under the name given here, and its own files still go into outputs/.": "Змонтовані теки доступні лише для читання: агент читає їх під назвою, вказаною тут, а власні файли потрапляють до outputs/.",
   "Browse folders on the server and choose the folder to mount.": "Перегляньте теки на сервері та виберіть теку для монтування.",
-  "composer.tray.noFolders": "Немає змонтованих тек"
+  "composer.tray.noFolders": "Немає змонтованих тек",
+  "File too large: {{name}} (max {{limit}})": "Файл завеликий: {{name}} (макс. {{limit}})"
 }

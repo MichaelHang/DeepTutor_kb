@@ -677,7 +677,7 @@ def test_supported_file_types_returns_upload_policy() -> None:
     assert ".key" in payload["extensions"]
     assert ".vsdx" in payload["extensions"]
     assert ".sqlite3" in payload["extensions"]
-    assert payload["max_file_size_bytes"] > 0
+    assert payload["max_file_size_bytes"] == 300 * 1024 * 1024
     assert "max_pdf_size_bytes" not in payload
     assert ".pdf" in payload["accept"]
     assert ".docx" in payload["accept"]

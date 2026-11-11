@@ -10,7 +10,7 @@ export interface KnowledgeUploadPolicy {
 export const DEFAULT_UPLOAD_POLICY: KnowledgeUploadPolicy = {
   extensions: [],
   accept: "",
-  max_file_size_bytes: 200 * 1024 * 1024,
+  max_file_size_bytes: 300 * 1024 * 1024,
   allow_any_extension: false,
 };
 

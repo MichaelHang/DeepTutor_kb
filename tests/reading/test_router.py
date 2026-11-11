@@ -121,7 +121,7 @@ def test_upload_rejects_an_empty_file(client: TestClient) -> None:
 
 
 def test_upload_rejects_an_oversized_file(client: TestClient, monkeypatch) -> None:
-    monkeypatch.setattr(reading, "MAX_MATERIAL_BYTES", 1024)
+    monkeypatch.setattr(reading, "material_size_limit", lambda filename: 1024)
 
     response = client.post(
         "/api/reading/materials",
@@ -129,6 +129,24 @@ def test_upload_rejects_an_oversized_file(client: TestClient, monkeypatch) -> No
     )
 
     assert response.status_code == 413
+
+
+def test_each_material_kind_has_its_own_ceiling() -> None:
+    assert reading.material_size_limit("notes.pdf") == reading.MAX_DOCUMENT_BYTES
+    assert reading.material_size_limit("lecture.mp3") == reading.MAX_AUDIO_BYTES
+    assert reading.material_size_limit("lecture.mp4") == reading.MAX_VIDEO_BYTES
+    # A format the reader does not know is treated as a document.
+    assert reading.material_size_limit("notes.unknown") == reading.MAX_DOCUMENT_BYTES
+
+
+def test_supported_formats_states_every_ceiling(client: TestClient) -> None:
+    payload = client.get("/api/reading/supported-formats").json()
+
+    assert payload["max_bytes"] == reading.MAX_DOCUMENT_BYTES
+    assert payload["max_audio_bytes"] == reading.MAX_AUDIO_BYTES
+    assert payload["max_video_bytes"] == reading.MAX_VIDEO_BYTES
+    assert ".mp3" in payload["audio_extensions"]
+    assert ".mp4" in payload["video_extensions"]
 
 
 def test_upload_of_an_image_only_pdf_explains_itself(client: TestClient) -> None:

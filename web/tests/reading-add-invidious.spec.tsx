@@ -34,6 +34,15 @@ vi.mock("@/components/watching/WatchingBrowser", () => ({
 
 vi.mock("@/lib/reading-api", () => ({
   uploadMaterial: vi.fn(),
+  getSupportedFormats: vi.fn(async () => ({
+    extensions: [],
+    max_bytes: 300 * 1024 * 1024,
+    max_audio_bytes: 250 * 1024 * 1024,
+    max_video_bytes: 1024 * 1024 * 1024,
+    audio_extensions: [".mp3"],
+    video_extensions: [".mp4"],
+    raw_view_extensions: [],
+  })),
 }));
 
 vi.mock("@/lib/reading-workspace-api", () => ({

@@ -87,6 +87,8 @@ REVISIONS_DIR = "revisions"
 _CONTENT_ID_RE = re.compile(r"^[0-9a-f]{8,64}$")
 _MATERIAL_ID_RE = re.compile(r"^(?:[0-9a-f]{8,64}|rm_[0-9a-f]{12})$")
 _ID_LENGTH = 16
+#: Read size when hashing a file on disk.
+_HASH_CHUNK = 1024 * 1024
 
 # Hard ceiling on how much unit text one tool call may return, so a model asking
 # for "1-400" cannot blow the turn's context budget. The tool reports the
@@ -156,6 +158,19 @@ def _read_json(path: Path) -> Any:
 
 def content_hash(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()[:_ID_LENGTH]
+
+
+def content_hash_file(path: str | Path) -> str:
+    """The same id :func:`content_hash` gives, without reading the file.
+
+    A lecture video is hundreds of megabytes; hashing it in one go would hold
+    all of it in memory just to learn its name.
+    """
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        while chunk := handle.read(_HASH_CHUNK):
+            digest.update(chunk)
+    return digest.hexdigest()[:_ID_LENGTH]
 
 
 class ReadingStore:
@@ -619,6 +634,7 @@ class ReadingStore:
         extractor: str = "pre-extracted",
         render_mode: str = "text",
         raw_data: bytes | None = None,
+        raw_path: str | Path | None = None,
         outline: Sequence[OutlineEntry] | None = None,
         unit_refs: Sequence[UnitReference] = (),
         content_format: Literal["plain_text", "web_markdown"] = "plain_text",
@@ -647,7 +663,13 @@ class ReadingStore:
             raise ReadingError(f"unsupported content format: {content_format}")
         remote_video = render_mode == "video" and extractor.startswith(("youtube-", "bilibili-"))
         carried = carry_source and self._has_raw(material_id)
-        if render_mode != "text" and not raw_data and not remote_video and not carried:
+        if (
+            render_mode != "text"
+            and not raw_data
+            and not raw_path
+            and not remote_video
+            and not carried
+        ):
             raise ReadingError(f"{render_mode} materials require playable source bytes")
 
         display_name = (filename or "material").strip() or "material"
@@ -669,10 +691,16 @@ class ReadingStore:
             elif carry_source:
                 _carry_dir(material_dir / ASSETS_DIR, stage_dir / ASSETS_DIR)
 
-            if raw_data is not None:
+            if raw_data is not None or raw_path is not None:
                 raw_dir = stage_dir / RAW_DIR
                 raw_dir.mkdir(parents=True, exist_ok=True)
-                (raw_dir / _safe_filename(display_name, fallback="material")).write_bytes(raw_data)
+                target = raw_dir / _safe_filename(display_name, fallback="material")
+                if raw_path is not None:
+                    # Copied, not read: a multi-hundred-megabyte upload must
+                    # not have to fit in memory to reach the store.
+                    shutil.copyfile(raw_path, target)
+                else:
+                    target.write_bytes(raw_data)
             elif carry_source:
                 # Re-ingesting the *same* bytes with better text — a transcript
                 # replacing its placeholder. Linking beats re-reading a
@@ -1584,4 +1612,5 @@ __all__ = [
     "UNITS_DIR",
     "ReadingStore",
     "content_hash",
+    "content_hash_file",
 ]

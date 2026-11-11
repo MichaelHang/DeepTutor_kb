@@ -181,7 +181,12 @@ export interface ReadingBookmark {
 
 export interface SupportedFormats {
   extensions: string[];
+  /** The document ceiling, and the default for anything else. */
   max_bytes: number;
+  max_audio_bytes: number;
+  max_video_bytes: number;
+  audio_extensions: string[];
+  video_extensions: string[];
   raw_view_extensions: string[];
 }
 

@@ -31,7 +31,7 @@ from deeptutor.reading.models import (
     TextPositionSelector,
     TextQuoteSelector,
 )
-from deeptutor.reading.store import ReadingStore
+from deeptutor.reading.store import ReadingStore, content_hash
 from deeptutor.services.web_source.snapshot_assets import SnapshotAsset
 from deeptutor.tools.web_fetch import FetchOutcome, _extract_readable
 from deeptutor.video_learning import service as video_learning_service
@@ -787,6 +787,25 @@ async def test_media_without_a_configured_provider_fails_before_running_ffmpeg(
     # The upload survives the failure, so configuring a provider and retrying
     # is all the user has to do.
     assert reading.raw_path(queued.material_id).read_bytes() == b"video bytes"
+
+
+@pytest.mark.asyncio
+async def test_a_media_upload_keeps_the_byte_hash_identity(stores, tmp_path: Path) -> None:
+    """A media upload is named after its bytes, not after the file it came from.
+
+    The upload is hashed and filed by path so a lecture video never has to fit
+    in memory, and the id it gets must stay the one the bytes have always
+    produced — otherwise every material would be uploaded twice.
+    """
+    reading, catalog = stores
+    source = tmp_path / "lecture.mp4"
+    source.write_bytes(b"identical bytes")
+
+    service = ReadingIngestionService(reading, catalog)
+    queued = await service.queue_media(source, filename="lecture.mp4")
+
+    assert queued.material_id == content_hash(b"identical bytes")
+    assert reading.raw_path(queued.material_id).read_bytes() == b"identical bytes"
 
 
 @pytest.mark.asyncio

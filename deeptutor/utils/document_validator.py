@@ -13,8 +13,10 @@ import unicodedata
 class DocumentValidator:
     """Document validation utilities"""
 
-    # Maximum file size in bytes (200MB), applied uniformly to every format.
-    MAX_FILE_SIZE: ClassVar[int] = 200 * 1024 * 1024
+    # Maximum file size in bytes (300MB), applied uniformly to every format.
+    # Immersive Reading's document tier tracks this same ceiling, so a document
+    # that is accepted there is accepted here too.
+    MAX_FILE_SIZE: ClassVar[int] = 300 * 1024 * 1024
 
     # Allowed file extensions
     ALLOWED_EXTENSIONS: ClassVar[set[str]] = {

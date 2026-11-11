@@ -21,7 +21,11 @@ import {
 import { useTranslation } from "react-i18next";
 
 import { WatchingBrowser } from "@/components/watching/WatchingBrowser";
-import { uploadMaterial } from "@/lib/reading-api";
+import {
+  getSupportedFormats,
+  uploadMaterial,
+  type SupportedFormats,
+} from "@/lib/reading-api";
 import {
   addReadingWorkspaceMaterial,
   checkReadingDuplicates,
@@ -40,6 +44,20 @@ import {
   materialDetail,
   sourceKindKey,
 } from "./shared";
+
+/**
+ * The ceiling for one file, by its extension.
+ *
+ * The reader answers a video, an audio track and a document differently, and
+ * each has its own limit; a file the reader does not know counts as a
+ * document.
+ */
+function sizeLimitFor(filename: string, limits: SupportedFormats): number {
+  const suffix = filename.slice(filename.lastIndexOf(".")).toLowerCase();
+  if (limits.video_extensions?.includes(suffix)) return limits.max_video_bytes;
+  if (limits.audio_extensions?.includes(suffix)) return limits.max_audio_bytes;
+  return limits.max_bytes;
+}
 
 const ACCEPT =
   ".pdf,.epub,.ppt,.pptx,.doc,.docx,.txt,.md,.html,.htm,.mp3,.wav,.m4a,.aac,.ogg,.mp4,.mov,.m4v,.webm,.mkv";
@@ -88,6 +106,21 @@ export function AddMaterialsDialog({
   const [error, setError] = useState("");
   const [showPicker, setShowPicker] = useState(false);
   const [showInvidious, setShowInvidious] = useState(false);
+  // The server states its own size limits; asking for it keeps the dialog and
+  // the reader in step when those limits move.
+  const [limits, setLimits] = useState<SupportedFormats | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void getSupportedFormats()
+      .then((formats) => {
+        if (alive) setLimits(formats);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const heading =
     mode === "create"
@@ -96,20 +129,40 @@ export function AddMaterialsDialog({
         ? t("Add material")
         : t("Upload material");
 
-  const addFiles = useCallback((files: File[]) => {
-    if (!files.length) return;
-    setItems((current) => [
-      ...current,
-      ...files.map((file) => ({
-        key: `file:${file.name}:${file.size}:${current.length}`,
-        kind: "file" as const,
-        label: file.name,
-        file,
-        sizeBytes: file.size,
-        decision: "reuse" as const,
-      })),
-    ]);
-  }, []);
+  const addFiles = useCallback(
+    (files: File[]) => {
+      if (!files.length) return;
+      // An oversized file is refused here rather than after a long upload
+      // that the server would only refuse at the end. Documents, audio and
+      // video have their own ceilings.
+      const accepted = limits
+        ? files.filter((file) => file.size <= sizeLimitFor(file.name, limits))
+        : files;
+      const rejected = files.filter((file) => !accepted.includes(file));
+      if (rejected.length) {
+        const first = rejected[0];
+        setError(
+          t("File too large: {{name}} (max {{limit}})", {
+            name: first.name,
+            limit: formatBytes(sizeLimitFor(first.name, limits!)),
+          }),
+        );
+      }
+      if (!accepted.length) return;
+      setItems((current) => [
+        ...current,
+        ...accepted.map((file) => ({
+          key: `file:${file.name}:${file.size}:${current.length}`,
+          kind: "file" as const,
+          label: file.name,
+          file,
+          sizeBytes: file.size,
+          decision: "reuse" as const,
+        })),
+      ]);
+    },
+    [limits, t],
+  );
 
   const addLink = useCallback(() => {
     const urls = linkDraft

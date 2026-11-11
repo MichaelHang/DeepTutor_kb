@@ -6,6 +6,22 @@ Open **Reading** under Learning, add a YouTube or Bilibili URL to a collection, 
 
 New timestamped notes are Reading annotations. Their location is captured when the editor opens, so playback moving while you write does not move the note. Failed saves keep the draft for retry; an older save finishing does not erase newer text.
 
+## Upload limits
+
+An uploaded material is streamed to the backend; it is never buffered by the
+frontend proxy, so a large lecture does not have to fit in the browser's
+request budget. Each kind has its own ceiling: a document up to 300 MB, an
+audio track up to 250 MB, and a video up to 1 GB. The add-material dialog asks
+the server for those ceilings and refuses an oversized file before the upload
+starts, so the limit is named instead of discovered at the end of a long
+transfer.
+
+The bytes land before transcription is attempted, so a video that later fails
+to transcribe is still playable and still stored. A video is hashed and filed
+by path rather than read into memory, and its material id stays the one the
+bytes have always produced — an upload that is retried is the same material,
+not a second copy.
+
 ## Existing Watching conversations
 
 Standalone Watching is retired. Existing `/watching/{sessionId}` and `/learning/watching/{sessionId}` links open a compatibility route that explicitly migrates the conversation into Reading. The conversation ID and messages stay the same. Legacy video JSON remains a provider/cache record; existing **Video Learning** notebook records remain readable and are not rewritten. Compatible transcripts, notes and saved positions are copied into Reading idempotently, and an existing Reading position wins over an older imported position.
