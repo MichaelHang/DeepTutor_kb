@@ -246,7 +246,16 @@ class TurnRequestPreparer:
             requested = str(payload.get("workspace_id") or "")
             if "workspace_id" in payload and requested != scope.workspace_id:
                 raise RuntimeError("The request workspace does not match its connection.")
-            stored = str(preferences.get("workspace_id") or "")
+            # A migrated conversation keeps its original binding in
+            # ``legacy_workspace_id`` while its own field was cleared to let
+            # it follow the default workspace. Clearing only works for the
+            # account-level store, where the conversations sit beside it; a
+            # named workspace keeps its conversations in its own database, so
+            # a cleared binding there can never be honoured and would reject
+            # every turn. Fall back to the recorded original.
+            stored = str(
+                preferences.get("workspace_id") or preferences.get("legacy_workspace_id") or ""
+            )
             if "workspace_id" in preferences and stored != scope.workspace_id:
                 raise RuntimeError("The conversation belongs to another workspace.")
             payload["workspace_id"] = scope.workspace_id

@@ -376,6 +376,36 @@ async def test_legacy_bindings_adopt_default_once_without_copying_materials(acco
         assert await get_sqlite_session_store().get_session(session["id"]) is None
 
 
+@pytest.mark.asyncio
+async def test_a_migrated_conversation_still_belongs_to_its_original_workspace(account):
+    """Clearing the binding must not lock a conversation out of its own workspace.
+
+    The legacy-adoption migration blanks ``workspace_id`` so a conversation
+    follows the default workspace. In a named workspace that is not possible —
+    the conversation lives in that workspace's own database — so the blanked
+    value would reject every turn. The recorded original is the binding that
+    still means something.
+    """
+    target = account.create_workspace("Legacy")["workspace_id"]
+    other = account.create_workspace("Other")["workspace_id"]
+    with workspace_context(target):
+        store = get_sqlite_session_store()
+        session = await store.create_session()
+        await store.update_session_preferences(
+            session["id"], {"workspace_id": "", "legacy_workspace_id": target}
+        )
+
+        reserved = await store.reserve_submission("submission-ok", "digest-ok", session["id"])
+        assert reserved == session["id"]
+
+        # A conversation recorded against a different workspace is still refused.
+        await store.update_session_preferences(
+            session["id"], {"workspace_id": "", "legacy_workspace_id": other}
+        )
+        with pytest.raises(RuntimeError, match="belongs to another workspace"):
+            await store.reserve_submission("submission-bad", "digest-bad", session["id"])
+
+
 def test_activity_leases_are_shared_and_exclude_migration(account):
     from deeptutor.services.workspace.activity import data_activity
 

@@ -1210,7 +1210,16 @@ class SQLiteSessionStore:
                 if row is None:
                     raise RuntimeError("Conversation not found in this workspace.")
                 preferences = _json_loads(row["preferences_json"], {})
-                if str(preferences.get("workspace_id") or "") != workspace_id:
+                # A migrated conversation records its original binding in
+                # ``legacy_workspace_id`` while its own field was cleared to
+                # follow the default workspace. The cleared value cannot be
+                # honoured here — this store is already a named workspace's
+                # own database — so the recorded original is the binding that
+                # still means something.
+                stored = str(
+                    preferences.get("workspace_id") or preferences.get("legacy_workspace_id") or ""
+                )
+                if stored != workspace_id:
                     raise RuntimeError("The conversation belongs to another workspace.")
             else:
                 session_id = str(self._insert_session(conn)["id"])
