@@ -48,6 +48,18 @@ selection. For concept discovery, use the existing semantic retrieval and, when
 needed, a query in the source language. Keep the resulting document, section,
 caption and page together instead of treating a similar figure as a match.
 
+The same `source_path` on its own restricts the search to that one document: the
+corpus is narrowed before retrieval, so every passage and every figure it
+returns belongs to the named file and can be attributed to it. This is what
+keeps a citation honest in a knowledge base that holds several papers answering
+the same question — a whole-KB search cannot tell them apart. The document's
+figures stay inside the scoped corpus, because for a scanned exam paper the
+figure record is where the question's diagram lives. Scoped retrieval never
+widens into a whole-KB search: a provider without a per-document corpus reports
+that it cannot scope instead of answering from the whole base. A `source_hash`
+given alongside the path is verified against the file, and a changed source is
+refused.
+
 For vector drawings, sparse captions or layout-dependent tables, inspect a PDF
 page directly. Exact printed-reference discovery scans only a selected unlocked
 PDF, up to 2000 pages; multiple mentions remain page choices. A known page can

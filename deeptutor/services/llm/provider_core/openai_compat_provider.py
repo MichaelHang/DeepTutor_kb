@@ -549,7 +549,7 @@ class OpenAICompatProvider(LLMProvider):
         )
 
         if tools:
-            kwargs["tools"] = tools
+            kwargs["tools"] = self._wire_tool_schemas(tools, model_name)
             kwargs["tool_choice"] = self._effective_tool_choice(tool_choice, model) or "auto"
 
         return kwargs
@@ -931,13 +931,34 @@ class OpenAICompatProvider(LLMProvider):
             body["include"] = ["reasoning.encrypted_content"]
         if tools:
             body["tools"] = convert_tools(
-                tools,
+                self._wire_tool_schemas(tools, model_name),
                 native_web_search=self._uses_native_web_search(model, tools),
             )
             body["tool_choice"] = (
                 convert_tool_choice(self._effective_tool_choice(tool_choice, model)) or "auto"
             )
         return body
+
+    def _wire_tool_schemas(
+        self, tools: list[dict[str, Any]], model: str | None
+    ) -> list[dict[str, Any]]:
+        """The tool schemas this endpoint can actually type.
+
+        An endpoint that cannot map a union-typed parameter closes the
+        streamed tool call's arguments at it, so the model's own value never
+        arrives. Its wire copy of the schema is flattened onto a single type;
+        the tool's own schema keeps the union, because DeepTutor's argument
+        guard reads it to tell "absent" from "explicitly null" (#1928).
+        """
+        from deeptutor.services.llm.capabilities import supports_nullable_tool_params
+
+        if supports_nullable_tool_params(self._binding_name(), model):
+            return tools
+        from deeptutor.services.llm.provider_core.tool_schema_types import (
+            flatten_tool_schema_types,
+        )
+
+        return flatten_tool_schema_types(tools) or tools
 
     # ------------------------------------------------------------------
     # Response parsing

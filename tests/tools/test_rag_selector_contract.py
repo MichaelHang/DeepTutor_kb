@@ -63,8 +63,10 @@ def test_advertised_schema_matches_execution_contract():
     assert schema["required"] == ["query", "kb_name"]
     assert properties["query"]["type"] == "string"
     assert properties["kb_name"]["type"] == "string"
-    for name in ("source_path", "asset_id", "figure", "source_hash"):
+    for name in ("asset_id", "figure", "source_hash"):
         assert properties[name]["type"] == ["string", "null"], name
+    assert properties["source_path"]["type"] == ["string", "array", "null"]
+    assert properties["source_path"]["items"] == {"type": "string"}
     assert properties["page"]["type"] == ["integer", "null"]
     assert properties["page"]["minimum"] == 1
     region = properties["region"]
@@ -159,16 +161,51 @@ async def test_malformed_selectors_fail_visibly_without_substitution(
     assert rag_calls["resolve_for_rag"] == []
 
 
+@pytest.mark.parametrize("key", ["asset_id", "figure", "source_hash"])
+@pytest.mark.asyncio
+async def test_a_nested_call_is_not_accepted_as_a_selector(kb, rag_calls, key):
+    """A model that merges two parallel calls must be told, not crash."""
+    nested = {"query": "another document", "kb_name": kb.name, "source_path": "manual.pdf"}
+    result = await RAGTool().execute(
+        query="Inspect this source",
+        kb_name=kb.name,
+        **{key: nested},
+    )
+    assert not result.success
+    assert result.metadata["error_type"] == "invalid_selector"
+    assert "plain string" in result.content
+    assert "one call at a time" in result.content
+    assert result.sources == []
+    assert rag_calls["rag_search"] == []
+    assert rag_calls["resolve_for_rag"] == []
+
+
+@pytest.mark.asyncio
+async def test_a_merged_call_keeps_the_path_it_carried(kb, rag_calls):
+    """A provider that merged two parallel calls still named one document."""
+    merged = {
+        "query": "another document",
+        "kb_name": kb.name,
+        "source_path": "manual.pdf",
+    }
+    result = await RAGTool().execute(
+        query="Inspect this source",
+        kb_name=kb.name,
+        source_path=merged,
+    )
+    assert result.success
+    assert rag_calls["rag_search"][0]["document_keys"] == ["manual.pdf"]
+
+
 @pytest.mark.parametrize(
     "extra",
     [
         {},
         {"region": [], "page": None, "asset_id": None, "figure": None},
-        {"source_hash": "a" * 64, "_vision_supported": True},
     ],
 )
 @pytest.mark.asyncio
-async def test_source_only_text_query_reports_unsupported_scope(kb, rag_calls, extra):
+async def test_source_only_query_scopes_retrieval_to_that_document(kb, rag_calls, extra):
     (kb / "raw" / "notes.txt").write_text("Keep this source private.", encoding="utf-8")
     result = await RAGTool().execute(
         query="What does this document say?",
@@ -176,13 +213,61 @@ async def test_source_only_text_query_reports_unsupported_scope(kb, rag_calls, e
         source_path="notes.txt",
         **extra,
     )
-    assert not result.success
-    assert result.metadata["error_type"] == "source_scope_unsupported"
-    assert "scoped text retrieval" in result.content
-    assert result.sources == []
-    assert result.model_message is None
-    assert rag_calls["rag_search"] == []
+    assert result.success
+    assert result.content == "semantic answer"
+    assert rag_calls["rag_search"][0]["document_keys"] == ["notes.txt"]
     assert rag_calls["resolve_for_rag"] == [kb.name]
+
+
+@pytest.mark.asyncio
+async def test_several_documents_can_be_scoped_in_one_call(kb, rag_calls):
+    (kb / "raw" / "notes.txt").write_text("Keep this source private.", encoding="utf-8")
+    (kb / "raw" / "other.txt").write_text("And this one too.", encoding="utf-8")
+    result = await RAGTool().execute(
+        query="What do these documents say?",
+        kb_name=kb.name,
+        source_path=["notes.txt", "other.txt"],
+    )
+    assert result.success
+    assert rag_calls["rag_search"][0]["document_keys"] == ["notes.txt", "other.txt"]
+
+
+@pytest.mark.asyncio
+async def test_a_list_of_paths_must_hold_strings(kb, rag_calls):
+    result = await RAGTool().execute(
+        query="What do these documents say?",
+        kb_name=kb.name,
+        source_path=["notes.txt", 7],
+    )
+    assert not result.success
+    assert result.metadata["error_type"] == "invalid_selector"
+    assert rag_calls["rag_search"] == []
+
+
+@pytest.mark.asyncio
+async def test_source_only_scope_rejects_a_changed_source(kb, rag_calls):
+    (kb / "raw" / "notes.txt").write_text("Keep this source private.", encoding="utf-8")
+    result = await RAGTool().execute(
+        query="What does this document say?",
+        kb_name=kb.name,
+        source_path="notes.txt",
+        source_hash="a" * 64,
+    )
+    assert not result.success
+    assert result.metadata["error_type"] == "source_changed"
+    assert rag_calls["rag_search"] == []
+
+
+@pytest.mark.asyncio
+async def test_source_only_scope_rejects_an_unknown_path(kb, rag_calls):
+    result = await RAGTool().execute(
+        query="What does this document say?",
+        kb_name=kb.name,
+        source_path="missing.pdf",
+    )
+    assert not result.success
+    assert result.metadata["error_type"] == "invalid_source_path"
+    assert rag_calls["rag_search"] == []
 
 
 @pytest.mark.asyncio

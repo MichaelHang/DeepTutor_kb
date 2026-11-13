@@ -390,7 +390,9 @@ class ContextExplorer:
         if threads_session_id(self.binding):
             kwargs["deeptutor_session_id"] = f"{session_id}:explore"
         if tool_schemas:
-            kwargs["tools"] = tool_schemas
+            from deeptutor.services.llm.provider_core.tool_schema_types import wire_tool_schemas
+
+            kwargs["tools"] = wire_tool_schemas(tool_schemas, self.binding)
             kwargs["tool_choice"] = "auto"
 
         text_parts: list[str] = []

@@ -853,7 +853,14 @@ def retrieve_nodes(
     index = _cached_index(Path(storage_dir))
     if document_keys is None:
         return retrievers.retrieve_nodes(index, Path(storage_dir), query, top_k=top_k)
-    return retrievers.retrieve_scoped_nodes(index, query, document_keys, top_k=top_k)
+    raw_root = Path(storage_dir).parent / "raw"
+    return retrievers.retrieve_scoped_nodes(
+        index,
+        query,
+        document_keys,
+        top_k=top_k,
+        raw_root=str(raw_root) if raw_root.is_dir() else "",
+    )
 
 
 def delete_kb_dir(kb_dir: Path) -> bool:

@@ -441,8 +441,13 @@ class LlamaIndexPipeline:
         context_parts: list[str] = []
         sources: list[dict[str, Any]] = []
         for i, node in enumerate(nodes):
-            context_parts.append(node.node.text)
             meta = node.node.metadata or {}
+            # Name the document every passage came from. A knowledge base holds
+            # several papers on the same question, and an unlabelled passage
+            # cannot be attributed to the one the user asked about.
+            label = str(meta.get("file_name") or "").strip()
+            text = node.node.text
+            context_parts.append(f"[source: {label}]\n{text}" if label else text)
             sources.append(
                 {
                     "title": meta.get("file_name", meta.get("title", f"Document {i + 1}")),

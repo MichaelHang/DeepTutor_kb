@@ -190,7 +190,9 @@ async def run_labeled_step(
         kwargs["stream_options"] = {"include_usage": True}
         auto_stream_options_added = True
     if tool_schemas:
-        kwargs["tools"] = tool_schemas
+        from deeptutor.services.llm.provider_core.tool_schema_types import wire_tool_schemas
+
+        kwargs["tools"] = wire_tool_schemas(tool_schemas, binding, kwargs.get("model"))
         kwargs["tool_choice"] = "auto"
 
     label: str | None = None

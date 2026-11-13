@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 import logging
+import os
 from pathlib import Path
 import shutil
 from typing import Any
@@ -261,7 +262,7 @@ def retrieve_nodes(
 
 
 @lru_cache(maxsize=4)
-def _scoped_index(index: Any, document_keys: tuple[str, ...]) -> Any:
+def _scoped_index(index: Any, document_keys: tuple[str, ...], raw_root: str = "") -> Any:
     """Reuse stored vectors in an isolated corpus; FAISS ignores node_ids filters.
 
     This never embeds the documents again. The small LRU dies with the loaded
@@ -277,21 +278,21 @@ def _scoped_index(index: Any, document_keys: tuple[str, ...]) -> Any:
     store = index.vector_store
     data = getattr(getattr(store, "data", None), "embedding_dict", None)
     faiss_index = getattr(store, "_faiss_index", None)
+    paths = _scoped_document_paths(documents, allowed, raw_root)
     if isinstance(data, dict):
         by_node = data
     elif faiss_index is not None:
         by_node = {
             node_id: faiss_index.reconstruct(int(vector_id)).tolist()
             for vector_id, node_id in index.index_struct.nodes_dict.items()
-            if documents[node_id].metadata.get("document_key") in allowed
+            if _scoped_node_is_usable(documents[node_id].metadata or {}, allowed, paths)
         }
     else:
         raise ValueError("This vector backend cannot enforce selected-document retrieval scope.")
     nodes = []
     for node in documents.values():
         if (
-            node.metadata.get("document_key") not in allowed
-            or node.metadata.get("page_status") != "searchable"
+            not _scoped_node_is_usable(node.metadata or {}, allowed, paths)
             or node.node_id not in by_node
         ):
             continue
@@ -307,16 +308,69 @@ def _scoped_index(index: Any, document_keys: tuple[str, ...]) -> Any:
     )
 
 
+def _scoped_document_paths(documents: dict[str, Any], allowed: set[str], raw_root: str) -> set[str]:
+    """Absolute paths of the selected documents, read off the index itself.
+
+    A page node carries both the document key and the absolute path of the
+    file it was made from; a figure node carries only that path. Matching the
+    paths keeps a document's figures inside the scoped corpus instead of
+    dropping them, which would silently lose every scanned page's content.
+    """
+    exact: dict[str, set[str]] = {}
+    for node in documents.values():
+        metadata = node.metadata or {}
+        key = metadata.get("document_key")
+        file_path = metadata.get("file_path")
+        if isinstance(key, str) and key in allowed and isinstance(file_path, str) and file_path:
+            exact.setdefault(key, set()).add(os.path.normpath(file_path))
+    paths: set[str] = set()
+    for key in allowed:
+        found = exact.get(key)
+        if found:
+            paths |= found
+            continue
+        # A document whose only nodes are figures carries no key at all; its
+        # path is still known relative to the knowledge base's ``raw`` root.
+        parts = Path(key).parts
+        if raw_root and parts and not Path(key).is_absolute() and ".." not in parts:
+            paths.add(os.path.normpath(str(Path(raw_root) / key)))
+    return paths
+
+
+def _scoped_node_is_usable(metadata: dict[str, Any], allowed: set[str], paths: set[str]) -> bool:
+    """Whether one indexed node belongs to the selected documents."""
+    if metadata.get("document_key") in allowed:
+        in_scope = True
+    else:
+        file_path = metadata.get("file_path")
+        in_scope = (
+            isinstance(file_path, str) and bool(file_path) and os.path.normpath(file_path) in paths
+        )
+    if not in_scope:
+        return False
+    if metadata.get("content_type") == "source_visual":
+        # A figure node has no page status; its caption and surrounding
+        # context are the evidence it carries.
+        return True
+    return metadata.get("page_status") == "searchable"
+
+
 def retrieve_scoped_nodes(
-    index: Any, query: str, document_keys: list[str], *, top_k: int = 8
+    index: Any,
+    query: str,
+    document_keys: list[str],
+    *,
+    top_k: int = 8,
+    raw_root: str = "",
 ) -> list[Any]:
     """Restrict the corpus before retrieval, including the BM25 component."""
-    index = _scoped_index(index, tuple(sorted(set(document_keys))))
+    index = _scoped_index(index, tuple(sorted(set(document_keys))), raw_root)
     if index is None:
         return []
     nodes = list(index.docstore.docs.values())
     ids = {node.node_id for node in nodes}
-    count = min(top_k, len(nodes))
+    config = retrieval_config_from_settings()
+    count = min(config.rerank_candidate_top_k(top_k), len(nodes))
     vector = index.as_retriever(similarity_top_k=count)
     bm25_cls = _import_bm25_retriever()
     if bm25_cls is not None:
@@ -333,7 +387,10 @@ def retrieve_scoped_nodes(
         )
     else:
         retriever = vector
-    return [hit for hit in retriever.retrieve(query) if hit.node.node_id in ids][:count]
+    hits = [hit for hit in retriever.retrieve(query) if hit.node.node_id in ids]
+    if not config.reranker_model:
+        return hits[: max(1, int(top_k))]
+    return rerank_nodes(query, hits, top_k=top_k, model_name=config.reranker_model)
 
 
 class _UnstemmedPageRetriever:

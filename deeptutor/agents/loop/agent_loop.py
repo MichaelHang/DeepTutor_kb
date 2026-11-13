@@ -194,7 +194,7 @@ class AgentLoop:
         # the declared parameter types to decode string-marked containers.
         self._tool_schema_catalog = tool_schemas
         self._last_request: LLMRequestSnapshot | None = None
-        self._request_tools: list[dict[str, Any]] | None = tool_schemas
+        self._request_tools: list[dict[str, Any]] | None = self._wire_tool_schemas(tool_schemas)
         # #1611: retrieved pixels belong to this turn's requests, never to
         # durable history. Both loop engines share the same ordering/budget.
         self._transient_model_messages: list[dict[str, Any]] = []
@@ -622,6 +622,24 @@ class AgentLoop:
         if tools is not None:
             kwargs["tools"] = tools
 
+    def _wire_tool_schemas(
+        self, tool_schemas: list[dict[str, Any]] | None
+    ) -> list[dict[str, Any]] | None:
+        """The tool schemas this endpoint can actually type.
+
+        An endpoint that cannot map a union-typed parameter closes the
+        streamed tool call's arguments at it, so the model's own value for
+        that parameter never arrives. Its wire copy of the schema is
+        flattened onto a single type; the catalog keeps the union, because
+        DeepTutor's argument guard reads it to tell "absent" from
+        "explicitly null" (#1928).
+        """
+        if not tool_schemas:
+            return tool_schemas
+        from deeptutor.services.llm.provider_core.tool_schema_types import wire_tool_schemas
+
+        return wire_tool_schemas(tool_schemas, self.pipeline.binding, self.pipeline.model)
+
     def _binding_supports_prompt_caching(self) -> bool:
         """Whether this binding reaches the model through OpenAICompatProvider.
 
@@ -707,7 +725,7 @@ class AgentLoop:
         if self.pipeline.usage is not None:
             kwargs["stream_options"] = {"include_usage": True}
         if tool_schemas:
-            kwargs["tools"] = tool_schemas
+            kwargs["tools"] = self._wire_tool_schemas(tool_schemas)
             available_tools = {
                 str((schema.get("function") or {}).get("name") or "")
                 for schema in tool_schemas

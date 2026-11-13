@@ -60,6 +60,11 @@ KNOWN_PROVIDERS = frozenset(
     }
 )
 
+# Providers whose index can restrict retrieval to a single document. The others
+# have no per-document corpus, so a scoped search must not silently widen into
+# a whole-KB search and lose the source attribution it promised.
+SCOPED_RETRIEVAL_PROVIDERS = frozenset({DEFAULT_PROVIDER})
+
 # Cached pipeline instances keyed by (kb_base_dir, provider).
 _PIPELINE_CACHE: Dict[Tuple[Optional[str], str], Any] = {}
 

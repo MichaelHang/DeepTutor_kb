@@ -568,7 +568,9 @@ class BaseAgent(ABC):
             "temperature": temperature,
         }
         if tools:
-            kwargs["tools"] = tools
+            from deeptutor.services.llm.provider_core.tool_schema_types import wire_tool_schemas
+
+            kwargs["tools"] = wire_tool_schemas(tools, self.binding, model)
 
         # Handle token limit for newer OpenAI models
         if max_tokens:

@@ -22,13 +22,18 @@ from deeptutor.services.rag.visual_assets import (
 )
 
 _FIGURE = re.compile(r"(?:fig(?:ure)?\.?|图|圖|table|表)\s*([0-9]+(?:[.\-][0-9]+)*[a-z]?)", re.I)
-_PAGE = re.compile(r"(?:page|p\.|第)\s*(\d+)\s*(?:页|頁)?", re.I)
+# "第1题" names a question, not a page. Only an explicit page marker counts:
+# "page 5", "p. 5" or "第5页".
+_PAGE = re.compile(r"(?:(?:page|p\.)\s*(\d+)|第\s*(\d+)\s*[页頁])", re.I)
 
 
 def page_reference(text: str) -> int | None:
     """Return the first page reference recognized by visual inspection."""
     match = _PAGE.search(text)
-    return int(match.group(1)) if match else None
+    if not match:
+        return None
+    number = match.group(1) or match.group(2)
+    return int(number) if number else None
 
 
 def figure_labels(text: str) -> list[str]:

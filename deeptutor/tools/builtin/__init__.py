@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import math
+from pathlib import Path
 from typing import Any
 
 from deeptutor.core.tool_protocol import (
@@ -117,6 +118,60 @@ def _rag_selector_error(message: str) -> ToolResult:
     )
 
 
+def _rag_result_to_tool_result(
+    result: dict[str, Any], *, query: str, kb_name: str, vision_supported: bool
+) -> ToolResult:
+    """Turn one retrieval result into the ``rag`` tool's answer."""
+    content = result.get("answer") or result.get("content", "")
+    failed = bool(result.get("error_type") or result.get("needs_reindex"))
+    if not content and result.get("error_type"):
+        content = f"Knowledge base '{kb_name}' search failed ({result['error_type']})."
+    elif not content and result.get("needs_reindex"):
+        content = f"Knowledge base '{kb_name}' needs reindexing before it can be searched."
+    elif not content and not result.get("sources"):
+        content = (
+            f"No matching content was found in knowledge base '{kb_name}'. "
+            "The search completed successfully."
+        )
+    visual_sources = [
+        source
+        for source in (result.get("sources") or [])
+        if isinstance(source, dict) and source.get("visual_asset_id")
+    ]
+    model_message = None
+    if visual_sources and vision_supported:
+        model_message = _rag_visual_model_message(kb_name, visual_sources)
+        if model_message is None:
+            content += "\nRetrieved source visuals were unavailable for pixel inspection."
+    elif visual_sources:
+        content += (
+            "\nThe selected model cannot inspect source image pixels. "
+            "Use the retrieved caption and text context; do not claim to have seen the image."
+        )
+    return ToolResult(
+        content=content,
+        sources=_rag_sources(result, query=query, kb_name=kb_name),
+        metadata=result,
+        success=not failed,
+        model_message=model_message,
+    )
+
+
+def _scoped_document_key(kb_dir: Path, source_path: str) -> str:
+    """Resolve a knowledge base's source path to the index's document key.
+
+    The index keys its documents relative to the knowledge base's ``raw``
+    root — the same path ``kb_files`` reports — so a scoped search can name
+    exactly the document the model picked.
+    """
+    relative = Path(source_path)
+    if not source_path or relative.is_absolute() or ".." in relative.parts:
+        raise ValueError("Select an exact relative source path from kb_files.")
+    if not (kb_dir / "raw" / relative).is_file():
+        raise ValueError("Source is unavailable; select an existing document.")
+    return relative.as_posix()
+
+
 def _normalize_rag_selectors(kwargs: dict[str, Any]) -> dict[str, Any] | str:
     """Validate the optional exact-source selectors at the LLM boundary.
 
@@ -161,6 +216,35 @@ def _normalize_rag_selectors(kwargs: dict[str, Any]) -> dict[str, Any] | str:
                 "[x0, y0, x1, y1] within 0..1. Resend with a valid crop, or "
                 "null to inspect the full page."
             )
+    for key in ("source_path", "asset_id", "figure", "source_hash"):
+        value = selectors[key]
+        if value is None or value == "":
+            continue
+        if key == "source_path" and isinstance(value, list):
+            # Several documents in one call: a model that wants two papers
+            # scoped at once must not have to emit two parallel tool calls,
+            # which some providers merge into one malformed call.
+            if not value or not all(isinstance(item, str) and item for item in value):
+                return (
+                    "Invalid source_path: a list of document paths must hold "
+                    "non-empty strings. Resend with the exact paths from kb_files."
+                )
+            selectors[key] = list(value)
+            continue
+        if not isinstance(value, str):
+            # Some OpenAI-compatible endpoints merge two parallel tool calls
+            # into one whose arguments hold the second call's arguments
+            # object. Recover the path it carried, if any.
+            nested = value.get("source_path") if isinstance(value, dict) else None
+            if key == "source_path" and isinstance(nested, str) and nested:
+                selectors[key] = nested
+                continue
+            return (
+                f"Invalid {key}: it must be a plain string, not a "
+                f"{type(value).__name__}. Send one call at a time and wait for "
+                "its result before the next — two calls in one message can be "
+                "merged into one malformed call by the provider."
+            )
     return selectors
 
 
@@ -185,7 +269,13 @@ class RAGTool(_PromptHintsMixin, BaseTool):
                     type="string",
                     required=False,
                     nullable=True,
-                    description="Exact document path from kb_files for visual/page inspection with a page, figure, region or asset_id. Source-only scoped text retrieval is unsupported; it never falls back to a whole-KB search.",
+                    description=(
+                        "Exact document path from kb_files, or a list of paths. "
+                        "It restricts the search to those documents, so every passage "
+                        "is attributable to one of them; with a page, figure, region or "
+                        "asset_id it inspects that exact view instead. Never falls back "
+                        "to a whole-KB search."
+                    ),
                 ),
                 ToolParameter(
                     name="asset_id",
@@ -238,6 +328,9 @@ class RAGTool(_PromptHintsMixin, BaseTool):
         schema = definition.to_openai_schema()["function"]["parameters"]
         schema["properties"]["presentation"]["type"] = ["string", "null"]
         schema["properties"]["presentation"]["enum"].append(None)
+        # One document or several: a string names one, a list names several.
+        schema["properties"]["source_path"]["type"] = ["string", "array", "null"]
+        schema["properties"]["source_path"]["items"] = {"type": "string"}
         definition.raw_parameters = schema
         return definition
 
@@ -332,14 +425,16 @@ class RAGTool(_PromptHintsMixin, BaseTool):
                 and not visual_requested
                 and page_reference(query) is None
             ):
-                return ToolResult(
-                    content=(
-                        "RAG does not support scoped text retrieval by source_path. "
-                        "No search was run. For exact visual inspection, also select "
-                        "a page, figure, region or asset_id."
-                    ),
-                    success=False,
-                    metadata={"error_type": "source_scope_unsupported"},
+                # A source path on its own scopes the search to those documents,
+                # so a passage can never be attributed to a different file.
+                return await self._retrieve_scoped(
+                    query=query,
+                    kb_name=kb_name,
+                    event_sink=event_sink,
+                    vision_supported=vision_supported,
+                    resource=resource,
+                    source_path=selectors["source_path"],
+                    source_hash=str(selectors.get("source_hash") or ""),
                 )
             try:
                 evidence = await asyncio.to_thread(
@@ -415,39 +510,89 @@ class RAGTool(_PromptHintsMixin, BaseTool):
             event_sink=event_sink,
             **extra_kwargs,
         )
-        content = result.get("answer") or result.get("content", "")
-        failed = bool(result.get("error_type") or result.get("needs_reindex"))
-        if not content and result.get("error_type"):
-            content = f"Knowledge base '{kb_name}' search failed ({result['error_type']})."
-        elif not content and result.get("needs_reindex"):
-            content = f"Knowledge base '{kb_name}' needs reindexing before it can be searched."
-        elif not content and not result.get("sources"):
-            content = (
-                f"No matching content was found in knowledge base '{kb_name}'. "
-                "The search completed successfully."
-            )
-        visual_sources = [
-            source
-            for source in (result.get("sources") or [])
-            if isinstance(source, dict) and source.get("visual_asset_id")
-        ]
-        model_message = None
-        if visual_sources and vision_supported:
-            model_message = _rag_visual_model_message(kb_name, visual_sources)
-            if model_message is None:
-                content += "\nRetrieved source visuals were unavailable for pixel inspection."
-        elif visual_sources:
-            content += (
-                "\nThe selected model cannot inspect source image pixels. "
-                "Use the retrieved caption and text context; do not claim to have seen the image."
-            )
-        return ToolResult(
-            content=content,
-            sources=_rag_sources(result, query=query, kb_name=kb_name),
-            metadata=result,
-            success=not failed,
-            model_message=model_message,
+        return _rag_result_to_tool_result(
+            result, query=query, kb_name=kb_name, vision_supported=vision_supported
         )
+
+    async def _retrieve_scoped(
+        self,
+        *,
+        query: str,
+        kb_name: str,
+        event_sink: Any,
+        vision_supported: bool,
+        resource: Any,
+        source_path: str | list[str],
+        source_hash: str = "",
+    ) -> ToolResult:
+        """Search inside named documents instead of the whole knowledge base.
+
+        A knowledge base holds several papers that answer the same question, so
+        a whole-KB search cannot say which file a passage came from. Scoping the
+        corpus to the named documents keeps every returned passage attributable
+        to one of them.
+        """
+        from deeptutor.services.rag.factory import SCOPED_RETRIEVAL_PROVIDERS
+        from deeptutor.services.rag.kb_paths import resolve_kb_dir
+        from deeptutor.services.rag.provider_binding import resolve_bound_provider
+        from deeptutor.tools.rag_tool import rag_search
+
+        provider = resolve_bound_provider(str(resource.base_dir), resource.name)
+        if provider not in SCOPED_RETRIEVAL_PROVIDERS:
+            return ToolResult(
+                content=(
+                    f"Knowledge base '{kb_name}' is served by the '{provider}' provider, "
+                    "which cannot restrict retrieval to a single document. Search the "
+                    "whole knowledge base instead and name the source of every passage."
+                ),
+                success=False,
+                metadata={"error_type": "scoped_retrieval_unsupported"},
+            )
+        kb_dir = resolve_kb_dir(resource.base_dir, resource.name)
+        paths = [source_path] if isinstance(source_path, str) else list(source_path)
+        try:
+            document_keys = [_scoped_document_key(kb_dir, path) for path in paths]
+        except ValueError as exc:
+            return ToolResult(
+                content=f"Source path could not be used for a scoped search: {exc}",
+                success=False,
+                metadata={"error_type": "invalid_source_path"},
+            )
+        if source_hash:
+            from deeptutor.services.rag.source_visuals import source_state
+
+            state = source_state(
+                kb_dir,
+                {
+                    "source_path": paths[0],
+                    "source_document_id": source_hash,
+                    "managed_source": True,
+                },
+            )
+            if state != "current":
+                return ToolResult(
+                    content=(
+                        "The cited source document changed since it was referenced. "
+                        "Re-read it before relying on any passage from it."
+                    ),
+                    success=False,
+                    metadata={"error_type": "source_changed"},
+                )
+        result = await rag_search(
+            query=query,
+            kb_name=kb_name,
+            event_sink=event_sink,
+            document_keys=document_keys,
+        )
+        tool_result = _rag_result_to_tool_result(
+            result, query=query, kb_name=kb_name, vision_supported=vision_supported
+        )
+        if tool_result.success and not tool_result.sources:
+            tool_result.content += (
+                f"\nThe search ran inside {', '.join(document_keys)} only and matched "
+                "no passage there. The document exists but holds nothing about this query."
+            )
+        return tool_result
 
 
 def _rag_visual_model_message(kb_name: str, sources: list[dict[str, Any]]) -> dict[str, Any] | None:

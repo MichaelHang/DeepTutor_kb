@@ -236,6 +236,12 @@ PROVIDER_CAPABILITIES: dict[str, dict[str, object]] = {
         "supports_vision": False,
         "system_in_messages": True,
     },
+    # Xiaomi's MiMo endpoint cannot type a union-typed tool parameter: it
+    # closes the streamed tool call's arguments at the first ``["string",
+    # "null"]`` property, so the model's own value never arrives.
+    "xiaomi_mimo": {
+        "supports_nullable_tool_params": False,
+    },
     # Local providers (generally OpenAI-compatible)
     "ollama": {
         "supports_response_format": True,  # Ollama supports JSON mode
@@ -631,6 +637,21 @@ def supports_tools(binding: str, model: str | None = None) -> bool:
         True if tools/function calling is supported
     """
     value = get_capability(binding, "supports_tools", model, default=False)
+    return bool(value)
+
+
+def supports_nullable_tool_params(binding: str, model: str | None = None) -> bool:
+    """Whether the provider can map a union-typed tool parameter back.
+
+    A parameter declared ``["string", "null"]`` lets the model say "absent"
+    explicitly, which DeepTutor's argument guard relies on (#1928). Some
+    endpoints cannot type such a parameter: the Xiaomi MiMo endpoint stops
+    writing the tool call's arguments at it and closes the argument object
+    there, so the model receives a truncated JSON fragment that arrives as a
+    nested object instead of the value it set. Those endpoints need the wire
+    copy of the schema flattened onto a single type.
+    """
+    value = get_capability(binding, "supports_nullable_tool_params", model, default=True)
     return bool(value)
 
 
