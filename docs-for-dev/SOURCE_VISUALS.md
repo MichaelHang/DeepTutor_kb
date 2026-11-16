@@ -32,6 +32,24 @@ that require OCR when no usable OCR engine is configured, may be absent.
 Other RAG providers do not yet index this visual manifest for semantic discovery.
 Exact visual and PDF page inspection is independent of the embedding engine.
 
+## Visual records in the ranking
+
+A visual record is indexed as its file name plus its caption and context, so a
+query that names the file matches every visual record of that file. The
+passages that carry the text can then be pushed out of the result, and the
+answer gets built from a placeholder such as "Source figure" instead of from
+the document. Two rules in the retrieval layer keep that from happening:
+
+- the first stage returns more hits than the result needs, so a visual record
+  that is over its share can give its slot to a passage instead of taking
+  one away from it;
+- a scoped search drops the file name from the query, because the corpus
+  already holds that one document and the name tells nothing apart there.
+
+The file name still dominates a whole-knowledge-base search, because there the
+name is what tells the files apart. A search that knows which document it
+wants should scope to it with `source_path`.
+
 ## Exact figures, original pages and coverage
 
 In a KB's Files view, select a document and expand **Source visual coverage**.

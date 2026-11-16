@@ -56,6 +56,86 @@ def _import_bm25_retriever():
         return None
 
 
+def _is_visual_hit(hit: Any) -> bool:
+    """Whether one hit is a source-visual record rather than a passage."""
+    node = getattr(hit, "node", None)
+    metadata = getattr(node, "metadata", None) or {}
+    return metadata.get("content_type") == "source_visual"
+
+
+def _text_first(hits: list[Any], top_k: int) -> list[Any]:
+    """Keep the passages that hold text from being crowded out.
+
+    A visual record's indexed text is the file name plus a placeholder
+    caption — "[Source visual] exam.pdf: Source figure" — so it matches any
+    query that names the file and crowds the passages that carry the actual
+    text out of the top-k. The passages hold the answer; a visual record
+    only says which page a figure sits on, and it stays in the result for
+    that. The order the retrieval produced is kept: this only bounds how
+    many of the slots a placeholder may take.
+    """
+    limit = max(1, int(top_k))
+    if len(hits) <= limit:
+        return hits
+    visual_quota = max(1, (limit * 3 + 5) // 10)
+    picked: list[Any] = []
+    surplus_visual: list[Any] = []
+    visual_left = visual_quota
+    for hit in hits:
+        if _is_visual_hit(hit):
+            if visual_left > 0:
+                picked.append(hit)
+                visual_left -= 1
+            else:
+                # A visual record gives up its slot; it never costs a passage
+                # one, so the passage behind it still reaches the result.
+                surplus_visual.append(hit)
+        else:
+            picked.append(hit)
+        if len(picked) >= limit:
+            break
+    for hit in surplus_visual:
+        if len(picked) >= limit:
+            break
+        picked.append(hit)
+    return picked
+
+
+def _without_scoped_document_names(query: str, document_keys: list[str]) -> str:
+    """Drop the document names a scoped query repeats.
+
+    A scoped corpus holds one document, so the file name in the query tells
+    nothing apart — but the visual records are indexed under that very name,
+    so a query that repeats it ranks them above the passages that hold the
+    text. Removing it leaves the question the search actually asks.
+    """
+    stripped = query
+    for key in document_keys:
+        name = Path(key).name
+        for token in (name, Path(name).stem):
+            if token and token in stripped:
+                stripped = stripped.replace(token, " ")
+    return stripped.strip() or query
+
+
+def _visual_records_dominate(hits: list[Any], top_k: int) -> bool:
+    """Whether the visual records took the candidates away from the passages.
+
+    Their indexed text is the file name, so a query that names the file ranks
+    them above everything else and the passages never reach the result. The
+    first stage then has to be asked for a wider pool: a visual record gives
+    up its slot, but there is nothing to give it up for.
+    """
+    if not hits:
+        return False
+    visual = sum(1 for hit in hits if _is_visual_hit(hit))
+    if visual <= len(hits) // 2:
+        return False
+    limit = max(1, int(top_k))
+    passages_needed = limit - max(1, (limit * 3 + 5) // 10)
+    return len(hits) - visual < passages_needed
+
+
 def _bm25_persist_dir(storage_dir: Path) -> Path:
     return storage_dir / BM25_PERSIST_DIRNAME
 
@@ -242,7 +322,7 @@ def retrieve_nodes(
 ) -> list[Any]:
     """Run first-stage retrieval and the optional cross-encoder reranker."""
     config = retrieval_config_from_settings()
-    candidate_top_k = config.rerank_candidate_top_k(top_k)
+    candidate_top_k = config.first_stage_candidates(top_k)
     retriever = build_retriever(
         index,
         storage_dir,
@@ -250,14 +330,22 @@ def retrieve_nodes(
         config=config,
     )
     candidates = retriever.retrieve(query)
+    if _visual_records_dominate(candidates, top_k):
+        # The visual records took the whole pool. Ask the first stage for a
+        # wider one, so the passages they pushed out have somewhere to land.
+        wider = build_retriever(
+            index,
+            storage_dir,
+            top_k=candidate_top_k * 4,
+            config=config,
+        )
+        candidates = wider.retrieve(query)
     if not config.reranker_model:
-        return candidates[: max(1, int(top_k))]
+        return _text_first(candidates, top_k)
 
-    return rerank_nodes(
-        query,
-        candidates,
-        top_k=top_k,
-        model_name=config.reranker_model,
+    return _text_first(
+        rerank_nodes(query, candidates, top_k=top_k, model_name=config.reranker_model),
+        top_k,
     )
 
 
@@ -370,27 +458,39 @@ def retrieve_scoped_nodes(
     nodes = list(index.docstore.docs.values())
     ids = {node.node_id for node in nodes}
     config = retrieval_config_from_settings()
-    count = min(config.rerank_candidate_top_k(top_k), len(nodes))
-    vector = index.as_retriever(similarity_top_k=count)
-    bm25_cls = _import_bm25_retriever()
-    if bm25_cls is not None:
-        lexical = bm25_cls.from_defaults(
-            nodes=nodes, similarity_top_k=count, token_pattern=BM25_TOKEN_PATTERN
-        )
-        retriever = QueryFusionRetriever(
-            [vector, _MatchedOnlyRetriever(lexical)],
-            llm=MockLLM(),
-            mode=FUSION_MODES.RECIPROCAL_RANK,
-            similarity_top_k=count,
-            num_queries=1,
-            use_async=False,
-        )
-    else:
-        retriever = vector
-    hits = [hit for hit in retriever.retrieve(query) if hit.node.node_id in ids]
+    count = min(config.first_stage_candidates(top_k), len(nodes))
+    scoped_query = _without_scoped_document_names(query, document_keys)
+
+    def _search(width: int) -> list[Any]:
+        vector = index.as_retriever(similarity_top_k=width)
+        bm25_cls = _import_bm25_retriever()
+        if bm25_cls is None:
+            retriever = vector
+        else:
+            lexical = bm25_cls.from_defaults(
+                nodes=nodes, similarity_top_k=width, token_pattern=BM25_TOKEN_PATTERN
+            )
+            retriever = QueryFusionRetriever(
+                [vector, _MatchedOnlyRetriever(lexical)],
+                llm=MockLLM(),
+                mode=FUSION_MODES.RECIPROCAL_RANK,
+                similarity_top_k=width,
+                num_queries=1,
+                use_async=False,
+            )
+        return [hit for hit in retriever.retrieve(scoped_query) if hit.node.node_id in ids]
+
+    hits = _search(count)
+    if _visual_records_dominate(hits, top_k):
+        # The visual records took the whole pool. Ask the first stage for a
+        # wider one, so the passages they pushed out have somewhere to land.
+        hits = _search(min(count * 4, len(nodes)))
     if not config.reranker_model:
-        return hits[: max(1, int(top_k))]
-    return rerank_nodes(query, hits, top_k=top_k, model_name=config.reranker_model)
+        return _text_first(hits, top_k)
+    return _text_first(
+        rerank_nodes(query, hits, top_k=top_k, model_name=config.reranker_model),
+        top_k,
+    )
 
 
 class _UnstemmedPageRetriever:

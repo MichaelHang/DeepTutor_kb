@@ -142,6 +142,43 @@ def _block_text(block: dict[str, Any]) -> str:
     return "\n".join(piece for piece in pieces if piece.strip())
 
 
+def _token_estimate(text: str) -> float:
+    """A rough token count: a CJK character is about one token, ASCII about four.
+
+    The chunk window is counted in tokens, so the blocks have to be weighed
+    in the same unit before they are grouped.
+    """
+    ascii_chars = sum(1 for char in text if char.isascii())
+    return (len(text) - ascii_chars) + ascii_chars / 4
+
+
+def _page_block_groups(blocks: list[str], token_budget: int) -> list[str]:
+    """Group a page's blocks so that a question is not cut in half.
+
+    MinerU hands over a page as the blocks its layout model found: the
+    question, its options, the figure caption and the material around them
+    are separate blocks. Joining the whole page into one text and cutting it
+    at a fixed window splits a question between its number and its stem — a
+    scanned exam page holds more text than one window, so the cut lands
+    inside a question every time, and the retrieval then finds a passage
+    that ends on "1." with no question under it. The window is applied to
+    the groups instead, so it lands between blocks and a question stays
+    whole.
+    """
+    groups: list[str] = []
+    current: list[str] = []
+    for text in blocks:
+        candidate = "\n\n".join([*current, text])
+        if current and _token_estimate(candidate) > token_budget:
+            groups.append("\n\n".join(current))
+            current = [text]
+        else:
+            current.append(text)
+    if current:
+        groups.append("\n\n".join(current))
+    return groups
+
+
 def build_pdf_documents(path: Path, parsed: Any, kb_dir: Path) -> list[Any]:
     """Prefer located IR; native PDF pages provide physical locators otherwise.
 
@@ -151,6 +188,8 @@ def build_pdf_documents(path: Path, parsed: Any, kb_dir: Path) -> list[Any]:
     """
     from llama_index.core import Document
     import pymupdf
+
+    from deeptutor.services.rag.pipelines.llamaindex.config import chunk_geometry
 
     resolved = path.resolve()
     raw = (kb_dir / "raw").resolve()
@@ -178,20 +217,24 @@ def build_pdf_documents(path: Path, parsed: Any, kb_dir: Path) -> list[Any]:
         elif text:
             unlocated.append(text)
     documents = []
+    chunk_size, _ = chunk_geometry()
+    page_count = 0
     with pymupdf.open(path) as pdf:
         if pdf.needs_pass:
             raise SourcePageError("Password protected PDFs cannot supply teaching evidence.")
+        page_count = pdf.page_count
         for index, page in enumerate(pdf):
-            located = "\n\n".join(grouped.get(index, []))
+            page_blocks = grouped.get(index, [])
+            located = "\n\n".join(page_blocks)
             # Furniture-only pages must not fall back to the text layer, or the
             # printed page number is indexed after its block was dropped.
             # Pages with other blocks keep the previous native-text fallback.
             if located.strip():
-                text = located.strip()
+                texts = _page_block_groups(page_blocks, chunk_size)
             elif index in furniture_pages and index not in content_pages:
-                text = ""
+                texts = [""]
             else:
-                text = page.get_text(sort=True).strip()
+                texts = [page.get_text(sort=True).strip()]
             metadata = {
                 "file_name": path.name,
                 "file_path": str(path),
@@ -204,22 +247,27 @@ def build_pdf_documents(path: Path, parsed: Any, kb_dir: Path) -> list[Any]:
                 "page_count": pdf.page_count,
                 "parser_signature": parsed.parser_signature,
                 "parse_engine": parsed.engine if located.strip() else "native_pdf",
-                "page_status": "searchable" if text else "needs_ocr",
+                "page_status": "searchable"
+                if located.strip() or any(text.strip() for text in texts)
+                else "needs_ocr",
                 "visual_status": "present"
                 if page.get_images() or page.get_drawings()
                 else "unknown",
             }
-            documents.append(
-                Document(
-                    id_=f"pdf-{digest}-{index}",
-                    text=text or f"[Unsearchable PDF page {index + 1}]",
-                    metadata=metadata,
-                    excluded_embed_metadata_keys=list(metadata),
-                    excluded_llm_metadata_keys=["file_path"],
+            for group_index, text in enumerate(texts):
+                documents.append(
+                    Document(
+                        id_=f"pdf-{digest}-{index}-{group_index}",
+                        text=text or f"[Unsearchable PDF page {index + 1}]",
+                        metadata=dict(metadata),
+                        excluded_embed_metadata_keys=list(metadata),
+                        excluded_llm_metadata_keys=["file_path"],
+                    )
                 )
-            )
     for index in grouped:
-        if index >= len(documents):
+        # Blocks the parser placed beyond the last page belong to no page, so
+        # they are kept as one extra document instead of being dropped.
+        if index >= page_count:
             unlocated.extend(grouped[index])
     if unlocated or (not grouped and parsed.engine not in {"text_only", "native_pdf"}):
         extra = "\n\n".join(unlocated) or parsed.markdown.strip()
@@ -243,9 +291,16 @@ def build_pdf_documents(path: Path, parsed: Any, kb_dir: Path) -> list[Any]:
 
 def persist_page_catalog(documents: list[Any], storage_dir: Path) -> None:
     pages = []
+    # A page that held more than one window becomes several documents, and the
+    # catalog lists pages, not documents: one entry per page.
+    listed: set[tuple[str, int]] = set()
     for document in documents:
         meta = getattr(document, "metadata", {})
         if meta.get("source_schema_version") == SOURCE_SCHEMA_VERSION and "page_index" in meta:
+            key = (str(meta.get("document_key") or ""), int(meta["page_index"]))
+            if key in listed:
+                continue
+            listed.add(key)
             pages.append({k: v for k, v in meta.items() if k != "file_path"})
     if not pages:
         return

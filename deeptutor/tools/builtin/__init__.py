@@ -255,7 +255,11 @@ class RAGTool(_PromptHintsMixin, BaseTool):
             description=(
                 "Retrieve relevant passages from one of the knowledge bases the "
                 "user attached to this turn. Call once per knowledge base you "
-                "want to consult; the system runs them in parallel."
+                "want to consult; the system runs them in parallel. It reads "
+                "what a knowledge base holds, it does not report on it: a "
+                "question about managing the knowledge base — re-parsing a "
+                "file, rebuilding the index, listing or removing documents — "
+                "is answered with the matching tool, not with a search."
             ),
             parameters=[
                 ToolParameter(name="query", type="string", description="Search query."),

@@ -50,6 +50,20 @@ class RetrievalConfig:
             return requested
         return max(requested, min(100, max(1, int(self.rerank_top_k))))
 
+    def first_stage_candidates(self, top_k: int) -> int:
+        """How many hits the first stage returns before the result is picked.
+
+        Without a reranker the candidate count was the result count, so the
+        visual records — whose indexed text is the file name plus a
+        placeholder caption — filled the whole result before the passages
+        that hold the text could be picked out of it. The first stage has to
+        hand back more than the result needs, or there is nothing to pick
+        from.
+        """
+        requested = max(1, int(top_k))
+        base = self.rerank_candidate_top_k(requested)
+        return max(base, self.candidate_top_k(requested, self.vector_top_k_multiplier))
+
 
 @dataclass(frozen=True)
 class VectorIndexConfig:

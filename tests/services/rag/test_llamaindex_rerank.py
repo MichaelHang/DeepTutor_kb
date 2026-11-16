@@ -98,7 +98,7 @@ def test_reranker_scoring_failure_returns_first_stage_candidates(
     assert "failed while scoring 2 candidates" in caplog.text
 
 
-def test_retrieve_nodes_expands_candidates_only_when_reranker_is_configured(
+def test_retrieve_nodes_expands_candidates_so_the_result_can_be_picked_from(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     captured: dict[str, object] = {}
@@ -130,7 +130,9 @@ def test_retrieve_nodes_expands_candidates_only_when_reranker_is_configured(
 
     unchanged = retriever_module.retrieve_nodes(object(), tmp_path, "probe", top_k=2)
 
-    assert captured["candidate_top_k"] == 2
+    # The result is picked out of the candidates, so the first stage hands back
+    # more than the result needs even without a reranker.
+    assert captured["candidate_top_k"] == 4
     assert [result.node_id for result in unchanged] == ["first", "second"]
 
     rerank_calls: list[dict[str, object]] = []
