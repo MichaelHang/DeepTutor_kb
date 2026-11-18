@@ -21,6 +21,12 @@ KNOWN_LARGE_CONTEXT_MARKERS = (
     "deepseek",
     "moonshot",
     "kimi",
+    # Xiaomi MiMo: every published id ships a 1M-token window. Without this
+    # marker an id that is missing from KNOWN_CONTEXT_WINDOWS (a newer
+    # release, or a vendor-prefixed spelling) falls back to 16_384 and the
+    # agentic loop compresses history at 5.7k tokens on a model that can
+    # actually hold a million.
+    "mimo",
     # xAI: grok-3/4+ all ship >=128k windows; without this, an un-annotated
     # model entry falls back to 16_384 and the agentic loop snips every tool
     # result (see context_window_guard in agents/loop/pipeline.py).
@@ -121,6 +127,18 @@ KNOWN_CONTEXT_WINDOWS: dict[str, int] = {
     "kimi-k2.7-code": 262144,
     "kimi-k2.7-code-highspeed": 262144,
     "kimi-k3": 1048576,
+    # Xiaomi MiMo — https://platform.xiaomimimo.com (2026-11-13).
+    # The models.dev snapshot this table was built from (2026-09-17) predates
+    # MiMo, so every MiMo id used to miss the table and fall back to 16_384.
+    # The provider reports 1_048_576, but DeepTutor's effective cap is
+    # MAX_EFFECTIVE_CONTEXT_WINDOW (1_000_000), so the table records the
+    # budget that is actually usable.
+    "mimo-v2.5": 1000000,
+    "mimo-v2.5-pro": 1000000,
+    "mimo-v2.5-pro-ultraspeed": 1000000,
+    "mimo-v2.6-flash": 1000000,
+    "mimo-v2.6-pro": 1000000,
+    "mimo-v2.6-pro-ultraspeed": 1000000,
     "minimax-m2": 204800,
     "minimax-m2.1": 204800,
     "minimax-m2.5": 204800,

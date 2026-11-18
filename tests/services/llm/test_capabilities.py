@@ -1,13 +1,24 @@
 """Tests for LLM capability helpers."""
 
+import pytest
+
 from deeptutor.services.llm.capabilities import (
     get_capability,
     get_effective_temperature,
     has_thinking_tags,
+    set_catalog_capability_overrides,
     supports_response_format,
     supports_tools,
     supports_vision,
 )
+
+
+@pytest.fixture(autouse=True)
+def _no_catalog_overrides():
+    """The override table is process-global; keep these verdicts table-driven."""
+    set_catalog_capability_overrides([])
+    yield
+    set_catalog_capability_overrides([])
 
 
 def test_model_override_capability() -> None:
@@ -172,3 +183,23 @@ def test_models_prefix_does_not_change_other_vendor_verdicts() -> None:
     assert supports_vision("custom", "openai/gpt-3.5-turbo") is False
     # The bare id keeps resolving exactly as before.
     assert supports_vision("custom", "gemini-2.5-flash") is True
+
+
+def test_mimo_vision_support_is_per_model_not_per_provider() -> None:
+    """MiMo's multimodal ids accept images; the v2.5 ``-pro`` line is text-only.
+
+    models.dev (2026-11-13) lists ``mimo-v2.5-pro`` and
+    ``mimo-v2.5-pro-ultraspeed`` with modalities ``{text}`` while every other
+    MiMo id carries ``{text,image,audio,video}``. A provider-level flag would
+    wrongly mark the text-only ids as multimodal, so the rule lives in
+    MODEL_OVERRIDES where the longest prefix wins.
+    """
+    assert supports_vision("xiaomi_mimo", "mimo-v2.6-pro") is True
+    assert supports_vision("xiaomi_mimo", "mimo-v2.6-flash") is True
+    assert supports_vision("xiaomi_mimo", "mimo-v2.6-pro-ultraspeed") is True
+    assert supports_vision("xiaomi_mimo", "mimo-v2.5") is True
+    # Text-only line: the longer prefix wins over the multimodal "mimo-v2.5".
+    assert supports_vision("xiaomi_mimo", "mimo-v2.5-pro") is False
+    assert supports_vision("xiaomi_mimo", "mimo-v2.5-pro-ultraspeed") is False
+    # An unrelated model on the same binding stays fail-closed.
+    assert supports_vision("xiaomi_mimo", "some-other-model") is False

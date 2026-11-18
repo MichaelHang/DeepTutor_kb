@@ -367,6 +367,16 @@ MODEL_OVERRIDES: dict[str, dict[str, object]] = {
     "kimi-k2.5": {"supports_vision": True},
     "kimi-k2.6": {"supports_vision": True},
     "kimi-k3": {"supports_vision": True},
+    # Xiaomi MiMo — vision is per-model, not per-provider: models.dev lists
+    # ``mimo-v2.5-pro`` / ``mimo-v2.5-pro-ultraspeed`` with modalities {text}
+    # while every other MiMo id carries {text,image,audio,video}. A
+    # provider-level flag would wrongly mark the text-only ids as multimodal,
+    # so the rule lives in MODEL_OVERRIDES where the longest prefix wins:
+    # ``mimo-v2.5-pro`` must precede ``mimo-v2.5`` or the text-only ids would
+    # be captured by the multimodal one.
+    "mimo-v2.5-pro": {"supports_vision": False},
+    "mimo-v2.5": {"supports_vision": True},
+    "mimo-v2.6": {"supports_vision": True},
 }
 
 
