@@ -61,14 +61,10 @@ class BrainstormTool(_PromptHintsMixin, BaseTool):
     async def execute(self, **kwargs: Any) -> ToolResult:
         from deeptutor.tools.brainstorm import brainstorm
 
+        # Let the service resolve trusted LLM settings.
         result = await brainstorm(
             topic=kwargs.get("topic", ""),
             context=kwargs.get("context", ""),
-            api_key=kwargs.get("api_key"),
-            base_url=kwargs.get("base_url"),
-            model=kwargs.get("model"),
-            max_tokens=kwargs.get("max_tokens"),
-            temperature=kwargs.get("temperature"),
         )
         return ToolResult(content=result.get("answer", ""), metadata=result)
 
@@ -118,10 +114,10 @@ def _rag_selector_error(message: str) -> ToolResult:
     )
 
 
-def _rag_result_to_tool_result(
+def _semantic_tool_result(
     result: dict[str, Any], *, query: str, kb_name: str, vision_supported: bool
 ) -> ToolResult:
-    """Turn one retrieval result into the ``rag`` tool's answer."""
+    """Shape one semantic ``rag_search`` result into the tool's envelope."""
     content = result.get("answer") or result.get("content", "")
     failed = bool(result.get("error_type") or result.get("needs_reindex"))
     if not content and result.get("error_type"):
@@ -157,19 +153,84 @@ def _rag_result_to_tool_result(
     )
 
 
-def _scoped_document_key(kb_dir: Path, source_path: str) -> str:
-    """Resolve a knowledge base's source path to the index's document key.
+def _raw_relative_path(value: str, raw_root: Path) -> str:
+    """The ``raw``-relative form of an absolute path inside that raw root.
 
-    The index keys its documents relative to the knowledge base's ``raw``
-    root — the same path ``kb_files`` reports — so a scoped search can name
-    exactly the document the model picked.
+    A figure node carries no document key — only the absolute location of the
+    file it was made from — so a row that names its document by that location
+    still describes one document. Returning its key form lets the same row be
+    recognised as the requested document instead of reading as a foreign one.
+    An empty result means the path lies outside the raw root.
     """
-    relative = Path(source_path)
-    if not source_path or relative.is_absolute() or ".." in relative.parts:
-        raise ValueError("Select an exact relative source path from kb_files.")
-    if not (kb_dir / "raw" / relative).is_file():
-        raise ValueError("Source is unavailable; select an existing document.")
+    candidate = Path(value)
+    if not candidate.is_absolute():
+        return ""
+    try:
+        relative = candidate.resolve().relative_to(raw_root.resolve())
+    except (OSError, ValueError):
+        return ""
     return relative.as_posix()
+
+
+def _document_keys_of(value: Any, raw_root: Path | None = None) -> set[str]:
+    """Normalised path (under raw/) a document is recognised by, case-exact.
+
+    The same document may be named by its key under ``raw/`` or by the
+    absolute location it was ingested from; both forms are kept so either one
+    matches the other.
+    """
+    text = str(value or "").replace("\\", "/").strip()
+    if not text:
+        return set()
+    keys = {text.strip("/")}
+    if raw_root is not None:
+        relative = _raw_relative_path(text, raw_root)
+        if relative:
+            keys.add(relative)
+    return {key for key in keys if key}
+
+
+def _scoped_source_identity(entry: dict[str, Any], raw_root: Path | None = None) -> set[str] | None:
+    """Document keys one retrieved source entry claims, or ``None`` if it names none.
+
+    Pipelines disagree on how a provenance row names its document —
+    ``document_key`` (LlamaIndex source pages), ``file_name``/``source``
+    (chunk provenance). Full-path namings (``document_key`` and
+    ``source``, the row's location under the KB's ``raw`` directory) are
+    authoritative: when either is present it alone defines the row's
+    identity, and basename-only metadata (``file_name``) cannot widen
+    it (#2374). A row whose full path is under another folder therefore
+    never matches a bare basename request — or a different folder path.
+    Rows that name no document at all (query metadata) stay neutral.
+    """
+    keys: set[str] = set()
+    for field in ("document_key", "source"):
+        keys |= _document_keys_of(entry.get(field), raw_root)
+    if not keys:
+        keys = _document_keys_of(entry.get("file_name"), raw_root)
+    return keys or None
+
+
+def _split_scoped_sources(
+    entries: list[Any] | None,
+    source_paths: str | list[str],
+    raw_root: Path | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Partition retrieved rows into (matching, foreign) for one source scope."""
+    paths = [source_paths] if isinstance(source_paths, str) else list(source_paths)
+    wanted: set[str] = set()
+    for path in paths:
+        wanted |= _document_keys_of(path, raw_root)
+    matching: list[dict[str, Any]] = []
+    foreign: list[dict[str, Any]] = []
+    for entry in entries or []:
+        if not isinstance(entry, dict):
+            continue
+        identity = _scoped_source_identity(entry, raw_root)
+        if identity is None:
+            continue
+        (matching if identity & wanted else foreign).append(entry)
+    return matching, foreign
 
 
 def _normalize_rag_selectors(kwargs: dict[str, Any]) -> dict[str, Any] | str:
@@ -429,16 +490,13 @@ class RAGTool(_PromptHintsMixin, BaseTool):
                 and not visual_requested
                 and page_reference(query) is None
             ):
-                # A source path on its own scopes the search to those documents,
-                # so a passage can never be attributed to a different file.
-                return await self._retrieve_scoped(
+                return await self._scoped_text_search(
                     query=query,
                     kb_name=kb_name,
+                    kb_dir=resolve_kb_dir(resource.base_dir, resource.name),
+                    selectors=selectors,
                     event_sink=event_sink,
                     vision_supported=vision_supported,
-                    resource=resource,
-                    source_path=selectors["source_path"],
-                    source_hash=str(selectors.get("source_hash") or ""),
                 )
             try:
                 evidence = await asyncio.to_thread(
@@ -514,89 +572,106 @@ class RAGTool(_PromptHintsMixin, BaseTool):
             event_sink=event_sink,
             **extra_kwargs,
         )
-        return _rag_result_to_tool_result(
+        return _semantic_tool_result(
             result, query=query, kb_name=kb_name, vision_supported=vision_supported
         )
 
-    async def _retrieve_scoped(
+    async def _scoped_text_search(
         self,
         *,
         query: str,
         kb_name: str,
+        kb_dir: Any,
+        selectors: dict[str, Any],
         event_sink: Any,
         vision_supported: bool,
-        resource: Any,
-        source_path: str | list[str],
-        source_hash: str = "",
     ) -> ToolResult:
-        """Search inside named documents instead of the whole knowledge base.
+        """Semantic retrieval restricted to one source document (#2374).
 
-        A knowledge base holds several papers that answer the same question, so
-        a whole-KB search cannot say which file a passage came from. Scoping the
-        corpus to the named documents keeps every returned passage attributable
-        to one of them.
+        Source scope and evidence modality are separate axes: an ordinary text
+        query with only ``source_path`` runs on the text path, restricted to
+        that document. It never falls back to a whole-KB search — a backend
+        that cannot enforce the scope, or a document with no matching passage,
+        fails explicitly instead of mixing in other files.
         """
-        from deeptutor.services.rag.factory import SCOPED_RETRIEVAL_PROVIDERS
-        from deeptutor.services.rag.kb_paths import resolve_kb_dir
-        from deeptutor.services.rag.provider_binding import resolve_bound_provider
+        from deeptutor.services.rag.source_visuals import source_file
+        from deeptutor.services.rag.visual_assets import _sha256_file
         from deeptutor.tools.rag_tool import rag_search
 
-        provider = resolve_bound_provider(str(resource.base_dir), resource.name)
-        if provider not in SCOPED_RETRIEVAL_PROVIDERS:
-            return ToolResult(
-                content=(
-                    f"Knowledge base '{kb_name}' is served by the '{provider}' provider, "
-                    "which cannot restrict retrieval to a single document. Search the "
-                    "whole knowledge base instead and name the source of every passage."
-                ),
-                success=False,
-                metadata={"error_type": "scoped_retrieval_unsupported"},
-            )
-        kb_dir = resolve_kb_dir(resource.base_dir, resource.name)
-        paths = [source_path] if isinstance(source_path, str) else list(source_path)
-        try:
-            document_keys = [_scoped_document_key(kb_dir, path) for path in paths]
-        except ValueError as exc:
-            return ToolResult(
-                content=f"Source path could not be used for a scoped search: {exc}",
-                success=False,
-                metadata={"error_type": "invalid_source_path"},
-            )
-        if source_hash:
-            from deeptutor.services.rag.source_visuals import source_state
-
-            state = source_state(
-                kb_dir,
-                {
-                    "source_path": paths[0],
-                    "source_document_id": source_hash,
-                    "managed_source": True,
-                },
-            )
-            if state != "current":
+        # One document or several: a string names one, a list names several.
+        # A model that wants two papers scoped at once must not have to emit
+        # two parallel tool calls, which some providers merge into one
+        # malformed call.
+        raw_path = selectors["source_path"]
+        source_paths = [raw_path] if isinstance(raw_path, str) else list(raw_path)
+        scope_label = ", ".join(source_paths)
+        expected_hash = str(selectors.get("source_hash") or "")
+        for path in source_paths:
+            try:
+                source = await asyncio.to_thread(source_file, kb_dir, path)
+            except (OSError, ValueError) as exc:
                 return ToolResult(
-                    content=(
-                        "The cited source document changed since it was referenced. "
-                        "Re-read it before relying on any passage from it."
-                    ),
+                    content=str(exc) or "Source is unavailable; select an existing document.",
                     success=False,
-                    metadata={"error_type": "source_changed"},
+                    metadata={"error_type": "source_unavailable", "source_scope": scope_label},
                 )
+            if expected_hash:
+                digest = await asyncio.to_thread(_sha256_file, source)
+                if digest != expected_hash:
+                    return ToolResult(
+                        content=(
+                            "The source changed since this reference was created. "
+                            "Select its current source_path explicitly."
+                        ),
+                        success=False,
+                        metadata={"error_type": "source_changed", "source_scope": scope_label},
+                    )
         result = await rag_search(
             query=query,
             kb_name=kb_name,
             event_sink=event_sink,
-            document_keys=document_keys,
+            document_keys=list(source_paths),
         )
-        tool_result = _rag_result_to_tool_result(
+        if result.get("error_type") or result.get("needs_reindex"):
+            return _semantic_tool_result(
+                result, query=query, kb_name=kb_name, vision_supported=vision_supported
+            )
+        matching, foreign = _split_scoped_sources(
+            result.get("sources"), source_paths, raw_root=Path(kb_dir) / "raw"
+        )
+        if foreign:
+            provider = str(result.get("provider") or "").strip() or "rag"
+            return ToolResult(
+                content=(
+                    f"The {provider} backend did not restrict retrieval to "
+                    f"'{scope_label}', so no scoped answer was returned; passages "
+                    "from other documents were withheld. Scope the query by "
+                    "rephrasing it around content you know is in that document, "
+                    "or run an unscoped semantic search without source_path."
+                ),
+                success=False,
+                metadata={
+                    "error_type": "source_scope_unsupported",
+                    "source_scope": scope_label,
+                    "provider": result.get("provider"),
+                },
+            )
+        if not matching:
+            return ToolResult(
+                content=(
+                    f"No content from '{scope_label}' matched this query; the scope "
+                    "was enforced and no other document was searched. Rephrase the "
+                    "query around that document's content, or check with kb_files "
+                    "that the document is indexed in this knowledge base."
+                ),
+                success=False,
+                metadata={"error_type": "source_scope_no_match", "source_scope": scope_label},
+            )
+        result["sources"] = matching
+        result["source_scope"] = scope_label
+        return _semantic_tool_result(
             result, query=query, kb_name=kb_name, vision_supported=vision_supported
         )
-        if tool_result.success and not tool_result.sources:
-            tool_result.content += (
-                f"\nThe search ran inside {', '.join(document_keys)} only and matched "
-                "no passage there. The document exists but holds nothing about this query."
-            )
-        return tool_result
 
 
 def _rag_visual_model_message(kb_name: str, sources: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -799,15 +874,13 @@ class KnowledgeFrontierTool(_PromptHintsMixin, BaseTool):
         if manifest is None:
             raise ValueError(f"Knowledge base '{kb_name}' is not accessible.")
 
+        # Let the service resolve trusted LLM settings.
         result = await discover_frontier(
             kb_name=kb_name,
             manifest=manifest,
             focus=kwargs.get("focus", ""),
             max_papers=kwargs.get("max_papers", 5),
             years_limit=kwargs.get("years_limit", 3),
-            api_key=kwargs.get("api_key"),
-            base_url=kwargs.get("base_url"),
-            model=kwargs.get("model"),
         )
         paper_sources = [
             {
@@ -839,15 +912,8 @@ class WebSearchTool(_PromptHintsMixin, BaseTool):
     async def execute(self, **kwargs: Any) -> ToolResult:
         from deeptutor.tools.web_search import web_search
 
-        query = kwargs.get("query", "")
-        output_dir = kwargs.get("output_dir")
-        verbose = kwargs.get("verbose", False)
-        result = await asyncio.to_thread(
-            web_search,
-            query=query,
-            output_dir=output_dir,
-            verbose=verbose,
-        )
+        # Model calls search in memory; programmatic callers own result-file paths.
+        result = await asyncio.to_thread(web_search, query=kwargs.get("query", ""))
 
         if isinstance(result, dict):
             answer = result.get("answer", "")
@@ -892,14 +958,10 @@ class ReasonTool(_PromptHintsMixin, BaseTool):
     async def execute(self, **kwargs: Any) -> ToolResult:
         from deeptutor.tools.reason import reason
 
+        # Let the service resolve trusted LLM settings.
         result = await reason(
             query=kwargs.get("query", ""),
             context=kwargs.get("context", ""),
-            api_key=kwargs.get("api_key"),
-            base_url=kwargs.get("base_url"),
-            model=kwargs.get("model"),
-            max_tokens=kwargs.get("max_tokens"),
-            temperature=kwargs.get("temperature"),
         )
         return ToolResult(content=result.get("answer", ""), metadata=result)
 
@@ -2456,6 +2518,7 @@ CONFIGURABLE_BUILTIN_TOOL_NAMES: tuple[str, ...] = (
     "kb_files",
     "knowledge_frontier",
     "read_source",
+    "propose_book_edit",
     "read_memory",
     "write_memory",
     "learning_status",

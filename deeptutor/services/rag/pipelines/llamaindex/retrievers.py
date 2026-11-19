@@ -349,6 +349,55 @@ def retrieve_nodes(
     )
 
 
+def _scope_key(value: str) -> str:
+    """Normalise a path-ish document identity for exact, case-sensitive comparison."""
+    return value.replace("\\", "/").strip("/")
+
+
+def _scope_matcher(
+    document_keys: tuple[str, ...], raw_root: Path | None, paths: frozenset[str] = frozenset()
+) -> Any:
+    """Membership test for one KB's document keys against its loaded nodes.
+
+    Source-schema nodes carry ``document_key`` (the path relative to the KB's
+    ``raw`` directory). Plain-text documents are ingested with only a
+    ``file_path`` (#2374) — the absolute location under that same ``raw``
+    directory — so those match by raw-relative position instead. A same-named
+    file in another folder is a different document and never matches, and
+    neither does one whose path differs only by case.
+
+    ``paths`` holds the absolute paths of the selected documents, read off the
+    index itself. A figure node carries no document key at all — only the path
+    of the file it was made from — so without this last check a document's
+    figures would drop out of the scoped corpus and its scanned pages would
+    silently lose their content.
+    """
+    keys = {_scope_key(key) for key in document_keys if str(key).strip()}
+    raw_resolved = raw_root.resolve() if raw_root is not None else None
+
+    def node_in_scope(node: Any) -> bool:
+        metadata = getattr(node, "metadata", None)
+        metadata = metadata if isinstance(metadata, dict) else {}
+        key = metadata.get("document_key")
+        if isinstance(key, str) and _scope_key(key) in keys:
+            return True
+        file_path = str(metadata.get("file_path") or "")
+        if not file_path:
+            return False
+        if _scope_key(file_path) in keys:
+            return True
+        if raw_resolved is not None:
+            try:
+                relative = Path(file_path).resolve().relative_to(raw_resolved)
+            except (OSError, ValueError):
+                relative = None
+            if relative is not None and _scope_key(relative.as_posix()) in keys:
+                return True
+        return bool(paths) and os.path.normpath(file_path) in paths
+
+    return node_in_scope
+
+
 @lru_cache(maxsize=4)
 def _scoped_index(index: Any, document_keys: tuple[str, ...], raw_root: str = "") -> Any:
     """Reuse stored vectors in an isolated corpus; FAISS ignores node_ids filters.
@@ -360,27 +409,30 @@ def _scoped_index(index: Any, document_keys: tuple[str, ...], raw_root: str = ""
 
     from .vector_store import storage_context_for_nodes
 
-    allowed = set(document_keys)
     # .docs reconstructs all nodes on every access; never call it per vector.
     documents = index.docstore.docs
+    # The absolute paths of the selected documents let a figure node — which
+    # carries no document key — stay inside the scoped corpus.
+    paths = frozenset(_scoped_document_paths(documents, set(document_keys), raw_root))
+    in_scope = _scope_matcher(document_keys, Path(raw_root) if raw_root else None, paths)
     store = index.vector_store
     data = getattr(getattr(store, "data", None), "embedding_dict", None)
     faiss_index = getattr(store, "_faiss_index", None)
-    paths = _scoped_document_paths(documents, allowed, raw_root)
     if isinstance(data, dict):
         by_node = data
     elif faiss_index is not None:
         by_node = {
             node_id: faiss_index.reconstruct(int(vector_id)).tolist()
             for vector_id, node_id in index.index_struct.nodes_dict.items()
-            if _scoped_node_is_usable(documents[node_id].metadata or {}, allowed, paths)
+            if in_scope(documents[node_id])
         }
     else:
         raise ValueError("This vector backend cannot enforce selected-document retrieval scope.")
     nodes = []
     for node in documents.values():
         if (
-            not _scoped_node_is_usable(node.metadata or {}, allowed, paths)
+            not in_scope(node)
+            or node.metadata.get("page_status") not in (None, "searchable")
             or node.node_id not in by_node
         ):
             continue
@@ -425,34 +477,18 @@ def _scoped_document_paths(documents: dict[str, Any], allowed: set[str], raw_roo
     return paths
 
 
-def _scoped_node_is_usable(metadata: dict[str, Any], allowed: set[str], paths: set[str]) -> bool:
-    """Whether one indexed node belongs to the selected documents."""
-    if metadata.get("document_key") in allowed:
-        in_scope = True
-    else:
-        file_path = metadata.get("file_path")
-        in_scope = (
-            isinstance(file_path, str) and bool(file_path) and os.path.normpath(file_path) in paths
-        )
-    if not in_scope:
-        return False
-    if metadata.get("content_type") == "source_visual":
-        # A figure node has no page status; its caption and surrounding
-        # context are the evidence it carries.
-        return True
-    return metadata.get("page_status") == "searchable"
-
-
 def retrieve_scoped_nodes(
     index: Any,
     query: str,
     document_keys: list[str],
     *,
     top_k: int = 8,
-    raw_root: str = "",
+    raw_root: Path | None = None,
 ) -> list[Any]:
     """Restrict the corpus before retrieval, including the BM25 component."""
-    index = _scoped_index(index, tuple(sorted(set(document_keys))), raw_root)
+    index = _scoped_index(
+        index, tuple(sorted(set(document_keys))), str(raw_root) if raw_root else ""
+    )
     if index is None:
         return []
     nodes = list(index.docstore.docs.values())

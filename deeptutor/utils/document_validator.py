@@ -18,23 +18,20 @@ class DocumentValidator:
     # that is accepted there is accepted here too.
     MAX_FILE_SIZE: ClassVar[int] = 300 * 1024 * 1024
 
-    # Allowed file extensions
+    # Default consumers use the built-in text extractor. Engine-aware callers
+    # pass an explicit policy; legacy Office requires a capable parser (#2338).
     ALLOWED_EXTENSIONS: ClassVar[set[str]] = {
         ".pdf",
         ".txt",
         ".md",
-        ".doc",
         ".docx",
-        ".rtf",
         ".html",
         ".htm",
         ".xml",
         ".json",
         ".csv",
         ".xlsx",
-        ".xls",
         ".pptx",
-        ".ppt",
         ".epub",
     }
 

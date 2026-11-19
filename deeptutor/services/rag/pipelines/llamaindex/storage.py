@@ -848,18 +848,24 @@ def prune_index_cache() -> int:
 
 
 def retrieve_nodes(
-    storage_dir: Path, query: str, *, top_k: int = 5, document_keys: list[str] | None = None
+    storage_dir: Path,
+    query: str,
+    *,
+    top_k: int = 5,
+    document_keys: list[str] | None = None,
+    raw_root: Path | None = None,
 ) -> list[Any]:
     index = _cached_index(Path(storage_dir))
     if document_keys is None:
         return retrievers.retrieve_nodes(index, Path(storage_dir), query, top_k=top_k)
-    raw_root = Path(storage_dir).parent / "raw"
+    # The caller knows the knowledge base's raw root; fall back to the one
+    # that sits next to the storage directory when it does not say.
+    resolved_raw_root = raw_root
+    if resolved_raw_root is None:
+        candidate = Path(storage_dir).parent / "raw"
+        resolved_raw_root = candidate if candidate.is_dir() else None
     return retrievers.retrieve_scoped_nodes(
-        index,
-        query,
-        document_keys,
-        top_k=top_k,
-        raw_root=str(raw_root) if raw_root.is_dir() else "",
+        index, query, document_keys, top_k=top_k, raw_root=resolved_raw_root
     )
 
 

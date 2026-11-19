@@ -20,6 +20,24 @@ from deeptutor.services.llm.provider_core.openai_responses.converters import con
 from deeptutor.tools.builtin import RAGTool
 
 
+def _echo_scoped_sources(monkeypatch: pytest.MonkeyPatch, calls: dict[str, list]) -> None:
+    """Answer a scoped query and name the documents it was asked for.
+
+    The scoped path refuses an answer that names no source, so a stub that
+    answers without provenance has to say which document it came from.
+    """
+
+    async def scoped_rag_search(**kwargs):
+        calls["rag_search"].append(kwargs)
+        keys = list(kwargs.get("document_keys") or [])
+        return {
+            "answer": "semantic answer",
+            "sources": [{"file_name": key, "source": key} for key in keys],
+        }
+
+    monkeypatch.setattr("deeptutor.tools.rag_tool.rag_search", scoped_rag_search)
+
+
 @pytest.fixture
 def kb(tmp_path: Path) -> Path:
     raw = tmp_path / "kb" / "raw"
@@ -181,13 +199,14 @@ async def test_a_nested_call_is_not_accepted_as_a_selector(kb, rag_calls, key):
 
 
 @pytest.mark.asyncio
-async def test_a_merged_call_keeps_the_path_it_carried(kb, rag_calls):
+async def test_a_merged_call_keeps_the_path_it_carried(kb, rag_calls, monkeypatch):
     """A provider that merged two parallel calls still named one document."""
     merged = {
         "query": "another document",
         "kb_name": kb.name,
         "source_path": "manual.pdf",
     }
+    _echo_scoped_sources(monkeypatch, rag_calls)
     result = await RAGTool().execute(
         query="Inspect this source",
         kb_name=kb.name,
@@ -205,8 +224,11 @@ async def test_a_merged_call_keeps_the_path_it_carried(kb, rag_calls):
     ],
 )
 @pytest.mark.asyncio
-async def test_source_only_query_scopes_retrieval_to_that_document(kb, rag_calls, extra):
+async def test_source_only_query_scopes_retrieval_to_that_document(
+    kb, rag_calls, extra, monkeypatch
+):
     (kb / "raw" / "notes.txt").write_text("Keep this source private.", encoding="utf-8")
+    _echo_scoped_sources(monkeypatch, rag_calls)
     result = await RAGTool().execute(
         query="What does this document say?",
         kb_name=kb.name,
@@ -220,9 +242,10 @@ async def test_source_only_query_scopes_retrieval_to_that_document(kb, rag_calls
 
 
 @pytest.mark.asyncio
-async def test_several_documents_can_be_scoped_in_one_call(kb, rag_calls):
+async def test_several_documents_can_be_scoped_in_one_call(kb, rag_calls, monkeypatch):
     (kb / "raw" / "notes.txt").write_text("Keep this source private.", encoding="utf-8")
     (kb / "raw" / "other.txt").write_text("And this one too.", encoding="utf-8")
+    _echo_scoped_sources(monkeypatch, rag_calls)
     result = await RAGTool().execute(
         query="What do these documents say?",
         kb_name=kb.name,
@@ -266,7 +289,9 @@ async def test_source_only_scope_rejects_an_unknown_path(kb, rag_calls):
         source_path="missing.pdf",
     )
     assert not result.success
-    assert result.metadata["error_type"] == "invalid_source_path"
+    # The scoped path names the failure by what it is: the document is not
+    # there. ("invalid_source_path" was this fork's earlier wording.)
+    assert result.metadata["error_type"] == "source_unavailable"
     assert rag_calls["rag_search"] == []
 
 
@@ -302,4 +327,245 @@ async def test_source_with_query_page_keeps_visual_inspection(kb, rag_calls, que
     unscoped = await RAGTool().execute(query=query, kb_name=kb.name)
     assert unscoped.success
     assert unscoped.content == "semantic answer"
+    assert len(rag_calls["rag_search"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_source_only_text_query_runs_document_scoped_text_search(kb, rag_calls, monkeypatch):
+    (kb / "raw" / "notes.txt").write_text("Keep this source private.", encoding="utf-8")
+
+    async def scoped_rag_search(**kwargs):
+        rag_calls["rag_search"].append(kwargs)
+        return {
+            "answer": "scoped answer",
+            "sources": [{"file_name": "notes.txt", "source": "notes.txt"}],
+        }
+
+    monkeypatch.setattr("deeptutor.tools.rag_tool.rag_search", scoped_rag_search)
+    result = await RAGTool().execute(
+        query="What does this document say?",
+        kb_name=kb.name,
+        source_path="notes.txt",
+    )
+    assert result.success
+    assert result.content == "scoped answer"
+    assert result.metadata["source_scope"] == "notes.txt"
+    assert result.sources == [
+        {"type": "rag", "kb_name": kb.name, "file_name": "notes.txt", "source": "notes.txt"}
+    ]
+    assert result.model_message is None
+    assert len(rag_calls["rag_search"]) == 1
+    assert rag_calls["rag_search"][0]["document_keys"] == ["notes.txt"]
+    assert rag_calls["resolve_for_rag"] == [kb.name]
+
+
+@pytest.mark.asyncio
+async def test_scoped_text_search_withholds_foreign_sources(kb, rag_calls, monkeypatch):
+    (kb / "raw" / "notes.txt").write_text("Keep this source private.", encoding="utf-8")
+
+    async def leaky_rag_search(**kwargs):
+        return {
+            "answer": "mixed answer",
+            "provider": "mock",
+            "sources": [
+                {"file_name": "notes.txt", "source": "notes.txt"},
+                {"file_name": "manual.pdf", "source": "manual.pdf"},
+            ],
+        }
+
+    monkeypatch.setattr("deeptutor.tools.rag_tool.rag_search", leaky_rag_search)
+    result = await RAGTool().execute(
+        query="What does this document say?",
+        kb_name=kb.name,
+        source_path="notes.txt",
+    )
+    assert not result.success
+    assert result.metadata["error_type"] == "source_scope_unsupported"
+    assert result.metadata["source_scope"] == "notes.txt"
+    assert result.sources == []
+    assert "withheld" in result.content
+    assert rag_calls["rag_search"] == []
+
+
+@pytest.mark.asyncio
+async def test_scoped_text_search_rejects_same_basename_in_another_folder(
+    kb, rag_calls, monkeypatch
+):
+    """Basename equality must not leak a foreign document into the scope (#2374)."""
+    requested = kb / "raw" / "requested"
+    requested.mkdir()
+    (requested / "notes.txt").write_text("Keep this source private.", encoding="utf-8")
+
+    async def leaky_rag_search(**kwargs):
+        rag_calls["rag_search"].append(kwargs)
+        return {
+            "answer": "foreign answer",
+            "provider": "mock",
+            "sources": [{"file_name": "notes.txt", "source": "other/notes.txt"}],
+        }
+
+    monkeypatch.setattr("deeptutor.tools.rag_tool.rag_search", leaky_rag_search)
+    result = await RAGTool().execute(
+        query="What does this document say?",
+        kb_name=kb.name,
+        source_path="requested/notes.txt",
+    )
+    assert not result.success
+    assert result.metadata["error_type"] == "source_scope_unsupported"
+    assert result.metadata["source_scope"] == "requested/notes.txt"
+    assert result.sources == []
+    assert "withheld" in result.content
+    assert rag_calls["rag_search"][0]["document_keys"] == ["requested/notes.txt"]
+
+
+@pytest.mark.asyncio
+async def test_scoped_text_search_rejects_foreign_row_for_basename_request(
+    kb, rag_calls, monkeypatch
+):
+    """A bare-basename request must not accept a row filed under another folder (#2374)."""
+    (kb / "raw" / "notes.txt").write_text("Keep this source private.", encoding="utf-8")
+
+    async def leaky_rag_search(**kwargs):
+        rag_calls["rag_search"].append(kwargs)
+        return {
+            "answer": "foreign answer",
+            "provider": "mock",
+            "sources": [{"file_name": "notes.txt", "source": "other/notes.txt"}],
+        }
+
+    monkeypatch.setattr("deeptutor.tools.rag_tool.rag_search", leaky_rag_search)
+    result = await RAGTool().execute(
+        query="What does this document say?",
+        kb_name=kb.name,
+        source_path="notes.txt",
+    )
+    assert not result.success
+    assert result.metadata["error_type"] == "source_scope_unsupported"
+    assert result.metadata["source_scope"] == "notes.txt"
+    assert result.sources == []
+    assert "withheld" in result.content
+    assert rag_calls["rag_search"][0]["document_keys"] == ["notes.txt"]
+
+
+@pytest.mark.asyncio
+async def test_scoped_text_search_reports_no_match_without_whole_kb_fallback(kb, rag_calls):
+    (kb / "raw" / "notes.txt").write_text("Keep this source private.", encoding="utf-8")
+    result = await RAGTool().execute(
+        query="What does this document say?",
+        kb_name=kb.name,
+        source_path="notes.txt",
+    )
+    assert not result.success
+    assert result.metadata["error_type"] == "source_scope_no_match"
+    assert result.metadata["source_scope"] == "notes.txt"
+    assert result.sources == []
+    assert "no other document was searched" in result.content
+    assert len(rag_calls["rag_search"]) == 1
+    assert rag_calls["rag_search"][0]["document_keys"] == ["notes.txt"]
+
+
+@pytest.mark.asyncio
+async def test_scoped_text_search_accepts_a_row_named_by_its_absolute_path(
+    kb, rag_calls, monkeypatch
+):
+    """A figure node names its document by location, not by key (#2374).
+
+    A row that carries the absolute path of the requested file inside the
+    knowledge base's ``raw`` directory describes that same document, so it
+    must not be withheld as a foreign source.
+    """
+    notes = kb / "raw" / "notes.txt"
+    notes.write_text("Keep this source private.", encoding="utf-8")
+
+    async def scoped_rag_search(**kwargs):
+        rag_calls["rag_search"].append(kwargs)
+        return {
+            "answer": "scoped answer",
+            "sources": [{"file_name": "notes.txt", "source": str(notes)}],
+        }
+
+    monkeypatch.setattr("deeptutor.tools.rag_tool.rag_search", scoped_rag_search)
+    result = await RAGTool().execute(
+        query="What does this document say?",
+        kb_name=kb.name,
+        source_path="notes.txt",
+    )
+    assert result.success
+    assert result.content == "scoped answer"
+    assert result.metadata["source_scope"] == "notes.txt"
+
+
+@pytest.mark.asyncio
+async def test_scoped_text_search_rejects_an_absolute_path_from_another_document(
+    kb, rag_calls, monkeypatch
+):
+    """An absolute path elsewhere in ``raw`` is still a foreign document."""
+    (kb / "raw" / "notes.txt").write_text("Keep this source private.", encoding="utf-8")
+    other = kb / "raw" / "other" / "notes.txt"
+    other.parent.mkdir(parents=True)
+    other.write_text("Someone else's notes.", encoding="utf-8")
+
+    async def scoped_rag_search(**kwargs):
+        rag_calls["rag_search"].append(kwargs)
+        return {
+            "answer": "foreign answer",
+            "provider": "mock",
+            "sources": [{"file_name": "notes.txt", "source": str(other)}],
+        }
+
+    monkeypatch.setattr("deeptutor.tools.rag_tool.rag_search", scoped_rag_search)
+    result = await RAGTool().execute(
+        query="What does this document say?",
+        kb_name=kb.name,
+        source_path="notes.txt",
+    )
+    assert not result.success
+    assert result.metadata["error_type"] == "source_scope_unsupported"
+    assert result.sources == []
+
+
+@pytest.mark.asyncio
+async def test_scoped_text_search_rejects_unavailable_source(kb, rag_calls):
+    result = await RAGTool().execute(
+        query="What does this document say?",
+        kb_name=kb.name,
+        source_path="gone.txt",
+    )
+    assert not result.success
+    assert result.metadata["error_type"] == "source_unavailable"
+    assert result.sources == []
+    assert rag_calls["rag_search"] == []
+
+
+@pytest.mark.asyncio
+async def test_scoped_text_search_verifies_source_hash(kb, rag_calls, monkeypatch):
+    import hashlib
+
+    notes = kb / "raw" / "notes.txt"
+    notes.write_text("Keep this source private.", encoding="utf-8")
+    digest = hashlib.sha256(notes.read_bytes()).hexdigest()
+
+    async def scoped_rag_search(**kwargs):
+        rag_calls["rag_search"].append(kwargs)
+        return {"answer": "scoped answer", "sources": [{"source": "notes.txt"}]}
+
+    monkeypatch.setattr("deeptutor.tools.rag_tool.rag_search", scoped_rag_search)
+    current = await RAGTool().execute(
+        query="What does this document say?",
+        kb_name=kb.name,
+        source_path="notes.txt",
+        source_hash=digest,
+    )
+    assert current.success
+    assert current.content == "scoped answer"
+
+    stale = await RAGTool().execute(
+        query="What does this document say?",
+        kb_name=kb.name,
+        source_path="notes.txt",
+        source_hash="b" * 64,
+    )
+    assert not stale.success
+    assert stale.metadata["error_type"] == "source_changed"
+    assert stale.sources == []
     assert len(rag_calls["rag_search"]) == 1

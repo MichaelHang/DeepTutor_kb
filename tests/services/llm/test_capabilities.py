@@ -203,3 +203,32 @@ def test_mimo_vision_support_is_per_model_not_per_provider() -> None:
     assert supports_vision("xiaomi_mimo", "mimo-v2.5-pro-ultraspeed") is False
     # An unrelated model on the same binding stays fail-closed.
     assert supports_vision("xiaomi_mimo", "some-other-model") is False
+
+
+def test_deepseek_v41_flash_is_vision_capable() -> None:
+    """DeepSeek-V4.1-Flash is natively multimodal under each of its published ids."""
+    for model in (
+        "deepseek-flash",
+        "deepseek-v4.1-flash",
+        "deepseek-v4.1-flash-1017",
+        "DeepSeek-V4.1-Flash-1017",
+        "deepseek-v4-flash-vision-exp",
+        # Gateways namespace the id; resolution must survive the prefix.
+        "deepseek/deepseek-flash",
+        "deepseek/deepseek-v4.1-flash-1017",
+        "vanchin/deepseek-v4.1-flash-1017",
+    ):
+        assert supports_vision("dashscope", model) is True, model
+        assert supports_vision("deepseek", model) is True, model
+
+
+def test_deepseek_text_models_stay_fail_closed() -> None:
+    """The vision overrides must not leak to other DeepSeek models."""
+    for model in ("deepseek-chat", "deepseek-reasoner", "deepseek-v3.2"):
+        assert supports_vision("deepseek", model) is False, model
+
+
+def test_deepseek_vision_override_keeps_sibling_capabilities() -> None:
+    """Vision-only overrides still fall through to the broader ``deepseek`` entry."""
+    assert has_thinking_tags("deepseek", "deepseek-v4.1-flash-1017") is True
+    assert supports_response_format("deepseek", "deepseek-v4.1-flash-1017") is False

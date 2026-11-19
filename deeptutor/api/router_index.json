@@ -1,5 +1,5 @@
 {
-  "fingerprint": "dd85434f5ddfd71195e17f6d88de904e7343b469b6667aca7eadcb01ba13cf11",
+  "fingerprint": "16520ecf45d3f171f566f8d3481f51a7b71f4633ef3474e961593a13b557a906",
   "routers": {
     "deeptutor.api.routers.auth:router": [
       {
@@ -2284,6 +2284,38 @@
         ]
       },
       {
+        "path": "/books/{book_id}/chapters",
+        "name": "add_chapter",
+        "kind": "http",
+        "methods": [
+          "POST"
+        ]
+      },
+      {
+        "path": "/books/{book_id}/chapters/{chapter_id}",
+        "name": "update_chapter",
+        "kind": "http",
+        "methods": [
+          "PATCH"
+        ]
+      },
+      {
+        "path": "/books/{book_id}/chapters/{chapter_id}",
+        "name": "delete_chapter",
+        "kind": "http",
+        "methods": [
+          "DELETE"
+        ]
+      },
+      {
+        "path": "/books/{book_id}/chapters/{chapter_id}/move",
+        "name": "move_chapter",
+        "kind": "http",
+        "methods": [
+          "POST"
+        ]
+      },
+      {
         "path": "/books/deep-dive",
         "name": "deep_dive",
         "kind": "http",
@@ -2382,6 +2414,38 @@
       {
         "path": "/books/rebuild",
         "name": "rebuild_book",
+        "kind": "http",
+        "methods": [
+          "POST"
+        ]
+      },
+      {
+        "path": "/books/{book_id}/edits/preview",
+        "name": "preview_book_edit",
+        "kind": "http",
+        "methods": [
+          "POST"
+        ]
+      },
+      {
+        "path": "/books/{book_id}/edits",
+        "name": "get_book_edits",
+        "kind": "http",
+        "methods": [
+          "GET"
+        ]
+      },
+      {
+        "path": "/books/{book_id}/edits/{edit_id}/apply",
+        "name": "apply_book_edit",
+        "kind": "http",
+        "methods": [
+          "POST"
+        ]
+      },
+      {
+        "path": "/books/{book_id}/edits/{edit_id}/undo",
+        "name": "undo_book_edit",
         "kind": "http",
         "methods": [
           "POST"
@@ -3596,6 +3660,22 @@
       {
         "path": "/network",
         "name": "update_network_settings",
+        "kind": "http",
+        "methods": [
+          "PUT"
+        ]
+      },
+      {
+        "path": "/web-fetch",
+        "name": "get_web_fetch_settings",
+        "kind": "http",
+        "methods": [
+          "GET"
+        ]
+      },
+      {
+        "path": "/web-fetch",
+        "name": "update_web_fetch_settings",
         "kind": "http",
         "methods": [
           "PUT"
